@@ -5,6 +5,88 @@
 
 ---
 
+## 骨架状态与快速启动
+
+当前版本是第 7 课项目骨架：提供可启动的 Web、API、Worker、MCP、Nginx 和数据依赖，以及规约、工程规则、健康检查、结构化日志与接口契约；**不实现十二项教学业务，也不调用真实模型**。
+
+### 1. 准备配置
+
+```bash
+cp .env.example .env
+```
+
+在本机 `.env` 中填写全部键。骨架启动所需值如下；尖括号内容必须替换为本机值，不得提交 `.env`：
+
+```dotenv
+APP_ENV=development
+APP_PORT=8088
+HTTP_PORT=8080
+MCP_PORT=8100
+SHUTDOWN_TIMEOUT=10s
+HEALTH_TIMEOUT=2s
+SESSION_SECRET=<至少16字符的本机随机值>
+MCP_TOKEN=<本机随机值>
+MYSQL_ADDR=mysql:3306
+MYSQL_ROOT_PASSWORD=<本机口令>
+MYSQL_DATABASE=campusclaw
+MYSQL_USER=campusclaw
+MYSQL_PASSWORD=<本机口令>
+MYSQL_DSN=<留给后续业务变更>
+REDIS_ADDR=redis:6379
+REDIS_URL=<留给后续业务变更>
+QDRANT_URL=http://qdrant:6333
+QDRANT_COLLECTION=<留给后续业务变更>
+MINIO_URL=http://minio:9000
+MINIO_ENDPOINT=<留给后续业务变更>
+MINIO_ROOT_USER=<本机用户名>
+MINIO_ROOT_PASSWORD=<本机口令>
+MINIO_BUCKET=<留给后续业务变更>
+MCP_URL=http://mcp:8100
+LLM_BASE_URL=<骨架阶段可留空>
+LLM_API_KEY=<骨架阶段可留空>
+LLM_MODEL=<骨架阶段可留空>
+EMBEDDING_BASE_URL=<骨架阶段可留空>
+EMBEDDING_API_KEY=<骨架阶段可留空>
+EMBEDDING_MODEL=<骨架阶段可留空>
+EMBEDDING_DIM=<骨架阶段可留空>
+```
+
+### 2. 一条命令启动
+
+```bash
+docker compose up -d --build
+```
+
+启动完成后访问：
+
+- 页面：`http://127.0.0.1:8088/`
+- 健康检查：`http://127.0.0.1:8088/health`
+
+`/health` 返回 HTTP 200 且 MySQL、Redis、Qdrant、MinIO、MCP 全部为 `up` 才算启动成功。故障排查使用：
+
+```bash
+docker compose ps
+docker compose logs --no-log-prefix api mcp worker nginx
+```
+
+停止并保留数据卷：
+
+```bash
+docker compose down
+```
+
+### 3. 提交前验证
+
+填写 `.env` 后执行：
+
+```bash
+make verify
+```
+
+该命令依次严格校验 OpenSpec、运行两个 Go 模块测试、安装并构建前端、检查依赖漏洞和 Compose 配置。人工项见 [`docs/lesson-07/verification.md`](docs/lesson-07/verification.md)。
+
+架构边界见 [`docs/architecture.md`](docs/architecture.md)，镜像来源与 MinIO 说明见 [`docs/dependencies.md`](docs/dependencies.md)。
+
 ## 一、项目题目
 
 **CampusClaw 智能教学全流程扩展——可验证生成、多模态评价与自适应辅导**
@@ -276,13 +358,18 @@ MCP 服务实现 `initialize`、`tools/list` 和 `tools/call`，使用 Bearer To
 
 ## 本仓库代码框架（骨架）
 
-> 当前仓库仅提供可扩展的目录与接口骨架，**不实现业务逻辑**。各模块函数以 `TODO` / `panic("not implemented")` / 占位页面标明待补全位置。
+> 当前仓库只实现可验证的工程骨架，不实现业务逻辑。未进入 OpenSpec change 的能力返回稳定的 `NOT_IMPLEMENTED`，不得以 `panic` 或伪造结果冒充完成。
 
 ```text
 .
 ├── README.md
+├── AGENTS.md                  # 跨会话项目约束
+├── Makefile                   # 统一验证与启动入口
 ├── docker-compose.yml          # Web / API / Worker / MySQL / Redis / Qdrant / MinIO / MCP
 ├── .env.example
+├── .cursor/
+│   ├── rules/                  # 八类工程规范
+│   └── skills/                 # 项目骨架验收流程
 ├── nginx/nginx.conf
 ├── api/                        # Go API
 │   ├── cmd/server/main.go
@@ -294,20 +381,13 @@ MCP 服务实现 `initialize`、`tools/list` 和 `tools/call`，使用 Bearer To
 │       ├── agent/              # 编排 / 内容 / 虚拟学生 / 验证 / 辅导智能体
 │       ├── gateway/            # 模型网关
 │       ├── mcpclient/          # MCP 主机客户端
-│       ├── queue/               # Redis 异步任务
+│       ├── queue/              # Redis 异步任务
+│       ├── retrieval/          # 可追溯检索接口
 │       └── security/           # 提示注入与内容安全
 ├── web/                        # React + TypeScript（教师端 / 学生端）
 ├── mcp-teaching-tools/         # MCP 教学工具服务
-├── openspec/                   # 规约变更目录（骨架）
-└── docs/                       # 补充文档
+├── openspec/                   # 配置、真实 change 与模板
+└── docs/lesson-07/             # 骨架验证证据
 ```
 
-### 本地启动（骨架阶段）
-
-```bash
-cp .env.example .env
-# 补齐密钥后再执行；当前 Compose 仅声明依赖服务，业务容器仍为骨架
-docker compose up -d mysql redis qdrant minio
-```
-
-详细实现按 OpenSpec change 与阶段计划推进。
+后续每项能力都必须先创建独立 OpenSpec change，再按 `tasks.md` 增量实现和验收。

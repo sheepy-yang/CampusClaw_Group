@@ -1,6 +1,10 @@
 package mcpclient
 
-import "context"
+import (
+	"context"
+
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/apperrors"
+)
 
 // ToolCall 一次受鉴权与审计约束的工具调用。
 type ToolCall struct {
@@ -12,9 +16,9 @@ type ToolCall struct {
 }
 
 type ToolResult struct {
-	OK     bool
-	Data   map[string]any
-	Error  string
+	OK    bool
+	Data  map[string]any
+	Error string
 	// DataOnly 调用结果仅作为模型上下文数据，不作系统指令。
 	DataOnly bool
 }
@@ -29,8 +33,8 @@ type Host interface {
 type StubHost struct{}
 
 func (StubHost) ListTools(_ context.Context, _ string) ([]string, error) {
-	panic("TODO: mcpclient.Host.ListTools")
+	return nil, apperrors.ErrNotImplemented
 }
 func (StubHost) Call(_ context.Context, _ ToolCall) (*ToolResult, error) {
-	panic("TODO: mcpclient.Host.Call")
+	return nil, apperrors.ErrNotImplemented
 }

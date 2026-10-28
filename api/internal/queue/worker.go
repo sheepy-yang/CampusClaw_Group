@@ -1,6 +1,11 @@
 package queue
 
-import "context"
+import (
+	"context"
+	"errors"
+
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/apperrors"
+)
 
 // JobType 异步任务类型。
 type JobType string
@@ -33,19 +38,20 @@ type Worker struct{}
 
 func NewWorker() *Worker { return &Worker{} }
 
-func (w *Worker) Run() error {
-	// TODO: 连接 Redis，按 JobType 分发到对应 handler
-	panic("TODO: queue.Worker.Run")
+// Run keeps the worker process lifecycle valid without pretending to consume jobs.
+// Redis consumption is introduced by the asynchronous-task OpenSpec change.
+func (w *Worker) Run(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
 }
 
-func (w *Worker) Handle(ctx context.Context, job Job) error {
+func (w *Worker) Handle(_ context.Context, job Job) error {
 	switch job.Type {
 	case JobVirtualClassroom, JobMultimodalGrade, JobHandwritingOCR,
 		JobSimilarity, JobClassReview, JobDiagnosis, JobBulkProposition:
-		_ = ctx
-		panic("TODO: queue.Worker.Handle " + string(job.Type))
+		return apperrors.ErrNotImplemented
 	default:
-		panic("TODO: unknown job type")
+		return errors.New("unknown job type")
 	}
 }
 
@@ -53,5 +59,5 @@ func (w *Worker) Handle(ctx context.Context, job Job) error {
 type StubEnqueuer struct{}
 
 func (StubEnqueuer) Enqueue(_ context.Context, _ Job) error {
-	panic("TODO: queue.Enqueuer.Enqueue")
+	return apperrors.ErrNotImplemented
 }

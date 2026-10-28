@@ -1,32 +1,51 @@
 package httpserver
 
 import (
-	"encoding/json"
+	"log/slog"
 	"net/http"
+	"time"
 
-	"github.com/sheepy-yang/CampusClaw_Group/api/internal/platform"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/health"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/httpapi"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/teaching"
 )
 
-// NewMux 注册平台与教学技能路由。具体处理函数为骨架。
-func NewMux() *http.ServeMux {
+// Dependencies are process-level HTTP dependencies assembled in cmd/server.
+type Dependencies struct {
+	Logger           *slog.Logger
+	HealthTimeout    time.Duration
+	HealthChecks     []health.Checker
+	TeachingPipeline teaching.Pipeline
+}
+
+// NewMux registers the operational skeleton and declared business routes.
+func NewMux(deps Dependencies) http.Handler {
+	if deps.Logger == nil {
+		deps.Logger = slog.Default()
+	}
+	if deps.TeachingPipeline == nil {
+		deps.TeachingPipeline = teaching.NewPipeline(teaching.PipelineDependencies{})
+	}
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		report := health.Run(r.Context(), deps.HealthTimeout, deps.HealthChecks)
+		status := http.StatusOK
+		if report.Status == health.StatusDown {
+			status = http.StatusServiceUnavailable
+		}
+		httpapi.WriteJSON(w, status, report)
 	})
 
 	// 平台服务
-	platform.RegisterRoutes(mux)
+	registerPlatformRoutes(mux)
 
 	// 十二项教学技能
-	teaching.RegisterRoutes(mux)
+	registerTeachingRoutes(mux, deps.TeachingPipeline)
 
-	return mux
-}
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		httpapi.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
+	})
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	return requestLogging(deps.Logger, mux)
 }

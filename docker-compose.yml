@@ -1,68 +1,141 @@
-# CampusClaw_Group 一键依赖栈（业务容器为骨架，按阶段补 Dockerfile）
+name: campusclaw-group
+
 services:
   mysql:
     image: mysql:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: campusclaw
-      MYSQL_USER: campusclaw
-      MYSQL_PASSWORD: campusclaw
-    ports:
-      - "3306:3306"
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?MYSQL_DATABASE is required}
+      MYSQL_USER: ${MYSQL_USER:?MYSQL_USER is required}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+    expose:
+      - "3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
 
   redis:
     image: redis:7
-    ports:
-      - "6379:6379"
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   qdrant:
     image: qdrant/qdrant:v1.12.1
-    ports:
-      - "6333:6333"
+    expose:
+      - "6333"
     volumes:
       - qdrant_data:/qdrant/storage
 
   minio:
-    image: minio/minio:latest
+    # MinIO stopped publishing official container images; this pinned image is
+    # built from the security-fixed upstream RELEASE.2025-10-15T17-29-55Z source.
+    image: ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    expose:
+      - "9000"
+      - "9001"
     volumes:
       - minio_data:/data
 
-  # --- 以下业务服务待补 Dockerfile 后启用 ---
-  # api:
-  #   build: ./api
-  #   env_file: .env
-  #   depends_on: [mysql, redis, qdrant, minio]
-  #   ports: ["8080:8080"]
-  #
-  # worker:
-  #   build: ./api
-  #   command: ["/app/worker"]
-  #   env_file: .env
-  #   depends_on: [mysql, redis, qdrant, minio]
-  #
-  # mcp:
-  #   build: ./mcp-teaching-tools
-  #   env_file: .env
-  #   ports: ["8100:8100"]
-  #
-  # web:
-  #   build: ./web
-  #   depends_on: [api]
-  #
-  # nginx:
-  #   image: nginx:1.27
-  #   volumes: ["./nginx/nginx.conf:/etc/nginx/nginx.conf:ro"]
-  #   ports: ["80:80"]
-  #   depends_on: [web, api]
+  mcp:
+    build:
+      context: ./mcp-teaching-tools
+    init: true
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      MCP_PORT: ${MCP_PORT:?MCP_PORT is required}
+      MCP_TOKEN: ${MCP_TOKEN:?MCP_TOKEN is required}
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:?SHUTDOWN_TIMEOUT is required}
+    expose:
+      - "${MCP_PORT}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$$MCP_PORT/health >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./api
+    init: true
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      HTTP_PORT: ${HTTP_PORT:?HTTP_PORT is required}
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:?SHUTDOWN_TIMEOUT is required}
+      HEALTH_TIMEOUT: ${HEALTH_TIMEOUT:?HEALTH_TIMEOUT is required}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      MYSQL_ADDR: ${MYSQL_ADDR:?MYSQL_ADDR is required}
+      REDIS_ADDR: ${REDIS_ADDR:?REDIS_ADDR is required}
+      QDRANT_URL: ${QDRANT_URL:?QDRANT_URL is required}
+      MINIO_URL: ${MINIO_URL:?MINIO_URL is required}
+      MCP_URL: ${MCP_URL:?MCP_URL is required}
+    expose:
+      - "${HTTP_PORT}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      minio:
+        condition: service_started
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$$HTTP_PORT/health >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  worker:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.worker
+    init: true
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      REDIS_ADDR: ${REDIS_ADDR:?REDIS_ADDR is required}
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:?SHUTDOWN_TIMEOUT is required}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+    expose:
+      - "80"
+
+  nginx:
+    image: nginx:1.27-alpine
+    init: true
+    environment:
+      API_PORT: ${HTTP_PORT:?HTTP_PORT is required}
+      NGINX_ENVSUBST_FILTER: ^API_PORT$
+    ports:
+      - "${APP_PORT:?APP_PORT is required}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
 
 volumes:
   mysql_data:

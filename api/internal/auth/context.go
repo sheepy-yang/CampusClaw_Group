@@ -1,6 +1,10 @@
 package auth
 
-import "context"
+import (
+	"context"
+
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/apperrors"
+)
 
 // Role 服务端认定的角色，不采信客户端提交值。
 type Role string
@@ -31,9 +35,9 @@ func WithPrincipal(ctx context.Context, p Principal) context.Context {
 }
 
 // Authenticate 校验 Token 并返回 Principal。
-// TODO: 接入会话 / JWT，强制班级与角色来自服务端。
+// The authentication change will provide the adapter; class and role must come from the server.
 func Authenticate(_ context.Context, _ string) (Principal, error) {
-	panic("TODO: auth.Authenticate not implemented")
+	return Principal{}, apperrors.ErrNotImplemented
 }
 
 // RequireTeacher 学生调用教师专属能力时返回 403。

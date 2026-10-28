@@ -1,19 +1,35 @@
 package gateway
 
-import "context"
+import (
+	"context"
 
-// ChatMessage 模型对话消息。
-type ChatMessage struct {
-	Role    string
-	Content string
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/apperrors"
+)
+
+type ContentPartType string
+
+const (
+	ContentText     ContentPartType = "text"
+	ContentImageURL ContentPartType = "image_url"
+)
+
+type ContentPart struct {
+	Type     ContentPartType
+	Text     string
+	ImageURL string
 }
 
-// ChatRequest / ChatResponse 文本与多模态模型调用契约。
+// ChatMessage supports text and image parts without exposing provider wire types.
+type ChatMessage struct {
+	Role    string
+	Content []ContentPart
+}
+
+// ChatRequest / ChatResponse are provider-neutral model contracts.
 type ChatRequest struct {
 	Model    string
 	Messages []ChatMessage
-	// MultimodalURLs 手写图片等短期授权地址（不暴露对象存储路径）。
-	MultimodalURLs []string
+	TraceID  string
 }
 
 type ChatResponse struct {
@@ -34,9 +50,28 @@ type EmbeddingResponse struct {
 	Model   string
 }
 
+type StreamEventType string
+
+const (
+	StreamMeta  StreamEventType = "meta"
+	StreamTool  StreamEventType = "tool"
+	StreamDelta StreamEventType = "delta"
+	StreamDone  StreamEventType = "done"
+	StreamError StreamEventType = "error"
+)
+
+type StreamEvent struct {
+	Type      StreamEventType
+	Delta     string
+	ToolName  string
+	ErrorCode string
+	Metadata  map[string]string
+}
+
 // Client 模型网关：密钥仅存服务端环境变量。
 type Client interface {
 	Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
+	StreamChat(ctx context.Context, req ChatRequest) (<-chan StreamEvent, error)
 	Embed(ctx context.Context, req EmbeddingRequest) (*EmbeddingResponse, error)
 }
 
@@ -44,8 +79,11 @@ type Client interface {
 type StubClient struct{}
 
 func (StubClient) Chat(_ context.Context, _ ChatRequest) (*ChatResponse, error) {
-	panic("TODO: gateway.Client.Chat")
+	return nil, apperrors.ErrNotImplemented
+}
+func (StubClient) StreamChat(_ context.Context, _ ChatRequest) (<-chan StreamEvent, error) {
+	return nil, apperrors.ErrNotImplemented
 }
 func (StubClient) Embed(_ context.Context, _ EmbeddingRequest) (*EmbeddingResponse, error) {
-	panic("TODO: gateway.Client.Embed")
+	return nil, apperrors.ErrNotImplemented
 }

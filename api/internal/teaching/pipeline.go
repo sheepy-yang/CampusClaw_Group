@@ -1,20 +1,48 @@
 package teaching
 
-import "context"
+import (
+	"context"
 
-// TaskStep 可恢复任务链路中的一步。
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/agent"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/apperrors"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/gateway"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/mcpclient"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/queue"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/retrieval"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/security"
+)
+
+type TaskStatus string
+
+const (
+	TaskQueued       TaskStatus = "queued"
+	TaskRunning      TaskStatus = "running"
+	TaskPending      TaskStatus = "pending_confirmation"
+	TaskSucceeded    TaskStatus = "succeeded"
+	TaskFailed       TaskStatus = "failed"
+	TaskNotStarted   TaskStatus = "not_started"
+	TaskStepRunning  TaskStatus = "step_running"
+	TaskStepFinished TaskStatus = "step_finished"
+)
+
+// TaskStep is one auditable step in a recoverable task.
 type TaskStep struct {
-	Name   string
-	Status string
+	Name      string
+	Status    TaskStatus
+	Attempt   int
+	ErrorCode string
 }
 
-// TaskRecord 技能任务状态（排队 / 处理中 / 待确认 / 成功 / 失败）。
+// TaskRecord carries only framework state; skill-specific payloads use typed contracts.
 type TaskRecord struct {
-	ID      string
-	Skill   SkillID
-	ClassID string
-	Status  string
-	Steps   []TaskStep
+	ID             string
+	Skill          SkillID
+	UserID         string
+	ClassID        string
+	Status         TaskStatus
+	IdempotencyKey string
+	TraceID        string
+	Steps          []TaskStep
 }
 
 // Pipeline 十二项功能共用任务链路接口。
@@ -26,23 +54,40 @@ type Pipeline interface {
 	Publish(ctx context.Context, taskID string) error
 }
 
-// DefaultPipeline 骨架实现。
-type DefaultPipeline struct{}
+// PipelineDependencies are ports assembled by cmd/server. Concrete adapters do
+// not leak into the application package.
+type PipelineDependencies struct {
+	Orchestrator   agent.Orchestrator
+	ContentAgent   agent.ContentAgent
+	VirtualStudent agent.VirtualStudentAgent
+	Verifier       agent.VerifierAgent
+	Model          gateway.Client
+	Retriever      retrieval.Retriever
+	MCP            mcpclient.Host
+	Queue          queue.Enqueuer
+	Audit          security.AuditLogger
+}
 
-func NewPipeline() Pipeline { return &DefaultPipeline{} }
+type DefaultPipeline struct {
+	deps PipelineDependencies
+}
+
+func NewPipeline(deps PipelineDependencies) Pipeline {
+	return &DefaultPipeline{deps: deps}
+}
 
 func (p *DefaultPipeline) Start(_ context.Context, _ SkillID, _ map[string]any) (*TaskRecord, error) {
-	panic("TODO: teaching.Pipeline.Start")
+	return nil, apperrors.ErrNotImplemented
 }
 
 func (p *DefaultPipeline) Resume(_ context.Context, _ string) (*TaskRecord, error) {
-	panic("TODO: teaching.Pipeline.Resume")
+	return nil, apperrors.ErrNotImplemented
 }
 
 func (p *DefaultPipeline) Confirm(_ context.Context, _ string, _ map[string]any) error {
-	panic("TODO: teaching.Pipeline.Confirm")
+	return apperrors.ErrNotImplemented
 }
 
 func (p *DefaultPipeline) Publish(_ context.Context, _ string) error {
-	panic("TODO: teaching.Pipeline.Publish")
+	return apperrors.ErrNotImplemented
 }

@@ -1,0 +1,243 @@
+openapi: 3.1.0
+info:
+  title: CampusClaw Group Skeleton API
+  version: 0.0.1-skeleton
+  description: >
+    第 7 课可启动骨架契约。除 /health 外，业务接口只声明边界并返回
+    NOT_IMPLEMENTED；本文件不表示十二项业务已经完成。
+servers:
+  - url: /
+
+paths:
+  /health:
+    get:
+      summary: 检查 API 及内部依赖连通状态
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: 所有依赖可达
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthReport"
+        "503":
+          description: 至少一个依赖不可达
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthReport"
+
+  /api/v1/auth/login:
+    post:
+      summary: 登录（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/auth/logout:
+    post:
+      summary: 退出（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /api/v1/classes/{classID}/materials:
+    parameters:
+      - $ref: "#/components/parameters/ClassID"
+    get:
+      summary: 查询本班材料（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    post:
+      summary: 上传本班材料（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/classes/{classID}/assignments:
+    parameters:
+      - $ref: "#/components/parameters/ClassID"
+    get:
+      summary: 查询本班作业（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    post:
+      summary: 发布本班作业（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/classes/{classID}/skills:
+    parameters:
+      - $ref: "#/components/parameters/ClassID"
+    put:
+      summary: 更新班级技能开关（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/audit:
+    get:
+      summary: 查询审计记录（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /api/v1/skills/proposition:
+    post:
+      summary: 发起智能命题（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/skills/lesson-plan:
+    post:
+      summary: 发起智能备课（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/skills/preview-sheet:
+    post:
+      summary: 发起智能预习单（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/skills/virtual-classroom:
+    post:
+      summary: 发起虚拟学生课堂演练（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/skills/multimodal-grade:
+    post:
+      summary: 发起多模态批改（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/skills/class-review:
+    post:
+      summary: 发起班级讲评（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/skills/diagnosis:
+    post:
+      summary: 发起学习诊断（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/skills/answer-replay:
+    post:
+      summary: 发起作答回放与原创性审查（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/skills/review-path:
+    post:
+      summary: 发起个性化复习路径（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/skills/socratic-tutor:
+    post:
+      summary: 发起追问式辅导（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/skills/classroom-cluster:
+    post:
+      summary: 发起课堂回答聚类（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/skills/adaptive-practice:
+    post:
+      summary: 发起自适应练习（已声明，未实现）
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /api/v1/contents/{id}/confirm:
+    post:
+      summary: 教师确认生成内容（已声明，未实现）
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/contents/{id}/publish:
+    post:
+      summary: 发布已确认内容（已声明，未实现）
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/tasks/{taskID}:
+    get:
+      summary: 查询异步任务（已声明，未实现）
+      parameters:
+        - name: taskID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+components:
+  parameters:
+    ClassID:
+      name: classID
+      in: path
+      required: true
+      schema:
+        type: string
+    ResourceID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    NotImplemented:
+      description: 能力已在骨架声明，但尚未进入业务实现 change
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+          example: NOT_IMPLEMENTED
+        message:
+          type: string
+        request_id:
+          type: string
+    HealthResult:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [up, down]
+    HealthReport:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [up, down]
+        checks:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/HealthResult"

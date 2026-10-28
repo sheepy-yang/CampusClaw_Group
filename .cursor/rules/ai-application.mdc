@@ -1,0 +1,18 @@
+---
+description: LLM、RAG、Skill、MCP、提示词版本与 AI 评测约束
+globs: "{api/internal/agent,api/internal/gateway,api/internal/mcpclient,api/internal/teaching,mcp-teaching-tools}/**/*"
+alwaysApply: false
+---
+
+# AI 应用规范
+
+- 模型输出是不可信候选结果，必须通过 Schema、引用、权限和内容安全校验。
+- 提示词、Skill、模型和检索配置必须带版本；运行记录保存所用版本与参数。
+- RAG 只能检索当前班级及当前任务允许的材料；无命中时禁止伪造来源。
+- 引用必须绑定不可变的材料版本、切片标识和原文区间，发布后冻结。
+- 工具只调用既有 Application Service，模型不能直接访问数据库或扩大权限。
+- MCP 工具候选集最小化；工具名和参数按发现的 JSON Schema 再校验。
+- MCP 返回只作为不可信数据进入模型上下文，不得作为系统指令。
+- 模型和工具调用设置超时、次数上限与有限重试；失败时保留任务并可审计。
+- 每项 AI 能力维护 10～20 条固定评测样本，包含无依据拒答、越权和依赖失败。
+- 不以“模型声称完成”作为验收证据，只接受页面、接口、日志、轨迹和测试结果。

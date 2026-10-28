@@ -1,16 +1,47 @@
 package main
 
 import (
-	"log"
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
 
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/config"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/queue"
 )
 
-// Worker 入口：消费 Redis 队列中的异步教学任务（骨架）。
+var errConfigInvalid = errors.New("configuration invalid")
+
 func main() {
-	w := queue.NewWorker()
-	log.Println("CampusClaw worker skeleton starting")
-	if err := w.Run(); err != nil {
-		log.Fatal(err)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "worker")
+	if err := run(logger); err != nil {
+		code := "WORKER_STOPPED"
+		if errors.Is(err, errConfigInvalid) {
+			code = "CONFIG_INVALID"
+		}
+		logger.Error("worker stopped", "event", "startup_failed", "code", code, "error", err)
+		os.Exit(1)
 	}
+}
+
+func run(logger *slog.Logger) error {
+	cfg, err := config.LoadWorker()
+	if err != nil {
+		return fmt.Errorf("%w: %v", errConfigInvalid, err)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	logger.Info(
+		"worker skeleton ready",
+		"event", "service_started",
+		"environment", cfg.Environment,
+		"mode", "lifecycle_only",
+	)
+	worker := queue.NewWorker()
+	return worker.Run(ctx)
 }
