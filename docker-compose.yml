@@ -1,4 +1,5 @@
-# CampusClaw_Group 一键依赖栈（业务容器为骨架，按阶段补 Dockerfile）
+# CampusClaw 一键部署栈
+# 使用：./deploy.sh  或  make up
 services:
   mysql:
     image: mysql:8.0
@@ -11,11 +12,23 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
 
   redis:
     image: redis:7
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
   qdrant:
     image: qdrant/qdrant:v1.12.1
@@ -23,6 +36,7 @@ services:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    restart: unless-stopped
 
   minio:
     image: minio/minio:latest
@@ -35,34 +49,71 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+    restart: unless-stopped
 
-  # --- 以下业务服务待补 Dockerfile 后启用 ---
-  # api:
-  #   build: ./api
-  #   env_file: .env
-  #   depends_on: [mysql, redis, qdrant, minio]
-  #   ports: ["8080:8080"]
-  #
-  # worker:
-  #   build: ./api
-  #   command: ["/app/worker"]
-  #   env_file: .env
-  #   depends_on: [mysql, redis, qdrant, minio]
-  #
-  # mcp:
-  #   build: ./mcp-teaching-tools
-  #   env_file: .env
-  #   ports: ["8100:8100"]
-  #
-  # web:
-  #   build: ./web
-  #   depends_on: [api]
-  #
-  # nginx:
-  #   image: nginx:1.27
-  #   volumes: ["./nginx/nginx.conf:/etc/nginx/nginx.conf:ro"]
-  #   ports: ["80:80"]
-  #   depends_on: [web, api]
+  mcp:
+    build: ./mcp-teaching-tools
+    environment:
+      MCP_TOKEN: ${MCP_TOKEN:-dev-mcp-token}
+    ports:
+      - "8100:8100"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8100/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  api:
+    build: ./api
+    env_file: .env
+    environment:
+      MCP_BASE_URL: http://mcp:8100
+      MCP_TOKEN: ${MCP_TOKEN:-dev-mcp-token}
+      HTTP_PORT: "8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      minio:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      API_PROXY_TARGET: http://api:8080
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "5173:5173"
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - web
+      - api
+    restart: unless-stopped
 
 volumes:
   mysql_data:

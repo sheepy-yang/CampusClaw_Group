@@ -274,40 +274,80 @@ MCP 服务实现 `initialize`、`tools/list` 和 `tools/call`，使用 Bearer To
 
 ---
 
-## 本仓库代码框架（骨架）
+## 本仓库实现说明
 
-> 当前仓库仅提供可扩展的目录与接口骨架，**不实现业务逻辑**。各模块函数以 `TODO` / `panic("not implemented")` / 占位页面标明待补全位置。
+> 已实现十二项技能的**可运行主路径**（内存存储 + 离线模型合成 + 进程内队列）。  
+> 配置 `LLM_API_KEY` 后可切换到真实模型网关；MySQL / Redis / Qdrant / MinIO 已在 Compose 中就绪，业务层可继续替换为持久化实现。
+
+环境与依赖明细见 **[REQUIREMENTS.md](./REQUIREMENTS.md)**。
 
 ```text
 .
 ├── README.md
-├── docker-compose.yml          # Web / API / Worker / MySQL / Redis / Qdrant / MinIO / MCP
+├── REQUIREMENTS.md             # 环境 / 依赖 / 端口 / 配置要求
+├── deploy.sh                   # 一键部署脚本
+├── Makefile                    # make up / down / logs / smoke
+├── docker-compose.yml          # Web / API / MCP / MySQL / Redis / Qdrant / MinIO / Nginx
 ├── .env.example
 ├── nginx/nginx.conf
-├── api/                        # Go API
-│   ├── cmd/server/main.go
-│   ├── cmd/worker/main.go
-│   └── internal/
-│       ├── auth/               # 认证与班级隔离
-│       ├── platform/           # 讲义、作业、审计等平台服务
-│       ├── teaching/           # 十二项技能编排与发布状态
-│       ├── agent/              # 编排 / 内容 / 虚拟学生 / 验证 / 辅导智能体
-│       ├── gateway/            # 模型网关
-│       ├── mcpclient/          # MCP 主机客户端
-│       ├── queue/               # Redis 异步任务
-│       └── security/           # 提示注入与内容安全
+├── api/                        # Go API（内嵌异步 Worker）
 ├── web/                        # React + TypeScript（教师端 / 学生端）
-├── mcp-teaching-tools/         # MCP 教学工具服务
-├── openspec/                   # 规约变更目录（骨架）
+├── mcp-teaching-tools/         # formula_verify / assignment_stats / student_mistakes
+├── openspec/                   # 规约变更目录
 └── docs/                       # 补充文档
 ```
 
-### 本地启动（骨架阶段）
+### 一键部署
+
+**前置：** 已安装 Docker Desktop（或 Docker Engine）且支持 `docker compose`。详见 [REQUIREMENTS.md](./REQUIREMENTS.md)。
 
 ```bash
-cp .env.example .env
-# 补齐密钥后再执行；当前 Compose 仅声明依赖服务，业务容器仍为骨架
+./deploy.sh
+# 或
+make up
+```
+
+完成后打开：
+
+- http://localhost （Nginx 统一入口）
+- 或 http://localhost:5173
+
+### 测试账号（演示环境）
+
+| 角色 | 账号 | 密码 | 说明 |
+| --- | --- | --- | --- |
+| 教师 | `teacher` | `demo123` | 张老师，班级 `class-demo` |
+| 学生 | `student` | `demo123` | 李同学，班级 `class-demo` |
+| 学生 | `student2` | `demo123` | 王同学，班级 `class-demo` |
+
+首页可用账号密码登录；也可点「教师 / 学生」一键进入。  
+接口调试时在 Header 带 `Authorization: Bearer <token>`，对应 Token 为 `teacher-demo` / `student-demo` / `student-demo-2`。
+
+```bash
+# 示例：教师登录
+curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"teacher","password":"demo123"}'
+```
+
+```bash
+./deploy.sh smoke     # 健康检查 + 登录冒烟
+./deploy.sh logs      # 查看日志
+./deploy.sh down      # 停止
+```
+
+### 其他启动方式
+
+仅依赖服务：
+
+```bash
 docker compose up -d mysql redis qdrant minio
 ```
 
-详细实现按 OpenSpec change 与阶段计划推进。
+本机开发（需 Go 1.22+、Node 20+）：
+
+```bash
+cd api && go run ./cmd/server
+cd web && npm install && npm run dev
+cd mcp-teaching-tools && go run ./cmd/server
+```

@@ -1,8 +1,8 @@
-# 骨架：实现阶段再补生产构建
 FROM node:20-alpine
 WORKDIR /app
 COPY package.json ./
 RUN npm install
 COPY . .
+ENV API_PROXY_TARGET=http://api:8080
 EXPOSE 5173
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]

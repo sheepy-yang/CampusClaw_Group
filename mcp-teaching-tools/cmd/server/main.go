@@ -9,6 +9,6 @@ import (
 
 func main() {
 	mux := mcp.NewHandler()
-	log.Println("mcp-teaching-tools skeleton on :8100")
+	log.Println("mcp-teaching-tools on :8100")
 	log.Fatal(http.ListenAndServe(":8100", mux))
 }

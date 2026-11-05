@@ -18,3 +18,7 @@ openspec/changes/<change-id>/
 ```
 
 示例占位见 `changes/_template/`。
+
+已建立：
+
+- `changes/yang-evaluation-core/` — 杨瑾文：批改 / 讲评 / 诊断 / 作答回放与原创性审查

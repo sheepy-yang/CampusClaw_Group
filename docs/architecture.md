@@ -1,6 +1,7 @@
-# 架构速览（骨架）
+# 架构速览
 
-详见根目录 [README.md](../README.md) 第四节。
+详见根目录 [README.md](../README.md) 第四节。  
+一键部署与环境要求见 [REQUIREMENTS.md](../REQUIREMENTS.md)、[deployment.md](./deployment.md)。
 
 ```text
 Browser → Nginx → Go API
