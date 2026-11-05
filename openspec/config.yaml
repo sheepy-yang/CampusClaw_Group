@@ -2,7 +2,7 @@ schema: spec-driven
 
 context: |
   Product: CampusClaw intelligent teaching workflow extension.
-  Current phase: Lesson 7 project bootstrap; build a runnable skeleton without teaching business logic.
+  Current phase: spec-driven MVP development on the validated project skeleton; only strictly validated OpenSpec changes may add teaching business logic.
   Stack: React 18 + TypeScript + Vite, Go 1.22 net/http, MySQL 8, Redis 7, Qdrant, MinIO, Nginx and Docker Compose.
   Architecture: Transport -> Application -> Domain/Port; infrastructure adapters implement ports.
   Security: server-side authentication, role authorization, class isolation and server-only secrets.
@@ -25,7 +25,8 @@ operations:
   apply:
     guidance:
       - Implement and verify one task at a time.
-      - Do not implement the twelve teaching capabilities during the skeleton change.
+      - Teaching MVP work is allowed only inside a strictly validated active change; the skeleton change itself remains limited to the project baseline.
+      - Unfinished repository administration, peer clean-machine review and release tagging remain independent delivery tasks and do not prove or block local MVP implementation.
       - Never use client-side visibility as authorization.
   archive:
     guidance:

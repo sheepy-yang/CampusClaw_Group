@@ -2,42 +2,43 @@
 package store
 
 import (
+	"errors"
 	"sync"
 	"time"
 )
 
 type Material struct {
-	ID      string `json:"id"`
-	ClassID string `json:"classId"`
-	Title   string `json:"title"`
-	Content string `json:"content"`
+	ID      string  `json:"id"`
+	ClassID string  `json:"classId"`
+	Title   string  `json:"title"`
+	Content string  `json:"content"`
 	Chunks  []Chunk `json:"chunks"`
 }
 
 type Chunk struct {
-	ID      string `json:"id"`
-	Text    string `json:"text"`
-	Source  string `json:"source"`
+	ID     string `json:"id"`
+	Text   string `json:"text"`
+	Source string `json:"source"`
 }
 
 type Assignment struct {
-	ID      string `json:"id"`
-	ClassID string `json:"classId"`
-	Title   string `json:"title"`
-	Status  string `json:"status"`
+	ID      string     `json:"id"`
+	ClassID string     `json:"classId"`
+	Title   string     `json:"title"`
+	Status  string     `json:"status"`
 	Items   []Question `json:"items"`
 }
 
 type Question struct {
-	ID         string                 `json:"id"`
-	Stem       string                 `json:"stem"`
-	Type       string                 `json:"type"`
-	Difficulty string                 `json:"difficulty"`
-	Answer     string                 `json:"answer,omitempty"`
-	Explanation string                `json:"explanation,omitempty"`
-	Citations  []map[string]any       `json:"citations,omitempty"`
-	Status     string `json:"status"`
-	Adopted    bool   `json:"adopted"`
+	ID          string           `json:"id"`
+	Stem        string           `json:"stem"`
+	Type        string           `json:"type"`
+	Difficulty  string           `json:"difficulty"`
+	Answer      string           `json:"answer,omitempty"`
+	Explanation string           `json:"explanation,omitempty"`
+	Citations   []map[string]any `json:"citations,omitempty"`
+	Status      string           `json:"status"`
+	Adopted     bool             `json:"adopted"`
 }
 
 type ContentRecord struct {
@@ -51,11 +52,11 @@ type ContentRecord struct {
 }
 
 type TaskRecord struct {
-	ID      string         `json:"id"`
-	Skill   string         `json:"skill"`
-	ClassID string         `json:"classId"`
-	Status  string         `json:"status"`
-	Steps   []TaskStep     `json:"steps"`
+	ID      string     `json:"id"`
+	Skill   string     `json:"skill"`
+	ClassID string     `json:"classId"`
+	Status  string     `json:"status"`
+	Steps   []TaskStep `json:"steps"`
 }
 
 type TaskStep struct {
@@ -64,31 +65,31 @@ type TaskStep struct {
 }
 
 type Submission struct {
-	ID              string            `json:"id"`
-	AssignmentID    string            `json:"assignmentId"`
-	StudentID       string            `json:"studentId"`
-	ClassID         string            `json:"classId"`
-	AnswerText      string            `json:"answerText"`
-	Transcription   string            `json:"transcription,omitempty"`
-	Confirmed       bool              `json:"transcriptionConfirmed"`
-	Steps           []map[string]any  `json:"steps,omitempty"`
-	Score           *float64          `json:"score,omitempty"`
-	Suggested       *float64          `json:"suggestedScore,omitempty"`
-	MaxScore        float64           `json:"maxScore,omitempty"`
-	FirstError      string            `json:"firstErrorStep,omitempty"`
-	ErrorCause      string            `json:"errorCause,omitempty"`
-	Confidence      float64           `json:"confidence"`
-	NeedsReview     bool              `json:"needsReview"`
-	TeacherNote     string            `json:"teacherNote,omitempty"`
-	ScoreHistory    []map[string]any  `json:"scoreHistory,omitempty"`
-	Status          string            `json:"status"`
-	Snapshots       []AnswerSnapshot  `json:"snapshots,omitempty"`
-	AIUsageNote     string            `json:"aiUsageNote,omitempty"`
-	Citations       []string          `json:"citations,omitempty"`
-	ImageDigest     string            `json:"imageDigest,omitempty"`
-	ObjectiveOnly   bool              `json:"objectiveOnly,omitempty"`
-	ModelFailed     bool              `json:"modelFailed,omitempty"`
-	StudentVisible  bool              `json:"studentVisibleDiag,omitempty"` // 诊断发布标记复用字段名时见 Content
+	ID             string           `json:"id"`
+	AssignmentID   string           `json:"assignmentId"`
+	StudentID      string           `json:"studentId"`
+	ClassID        string           `json:"classId"`
+	AnswerText     string           `json:"answerText"`
+	Transcription  string           `json:"transcription,omitempty"`
+	Confirmed      bool             `json:"transcriptionConfirmed"`
+	Steps          []map[string]any `json:"steps,omitempty"`
+	Score          *float64         `json:"score,omitempty"`
+	Suggested      *float64         `json:"suggestedScore,omitempty"`
+	MaxScore       float64          `json:"maxScore,omitempty"`
+	FirstError     string           `json:"firstErrorStep,omitempty"`
+	ErrorCause     string           `json:"errorCause,omitempty"`
+	Confidence     float64          `json:"confidence"`
+	NeedsReview    bool             `json:"needsReview"`
+	TeacherNote    string           `json:"teacherNote,omitempty"`
+	ScoreHistory   []map[string]any `json:"scoreHistory,omitempty"`
+	Status         string           `json:"status"`
+	Snapshots      []AnswerSnapshot `json:"snapshots,omitempty"`
+	AIUsageNote    string           `json:"aiUsageNote,omitempty"`
+	Citations      []string         `json:"citations,omitempty"`
+	ImageDigest    string           `json:"imageDigest,omitempty"`
+	ObjectiveOnly  bool             `json:"objectiveOnly,omitempty"`
+	ModelFailed    bool             `json:"modelFailed,omitempty"`
+	StudentVisible bool             `json:"studentVisibleDiag,omitempty"` // 诊断发布标记复用字段名时见 Content
 }
 
 type AnswerSnapshot struct {
@@ -98,62 +99,95 @@ type AnswerSnapshot struct {
 	Trigger   string    `json:"trigger"` // interval | manual — 不采集逐键
 }
 
+// LearningOutcome describes the verified result of a learning event. An empty
+// value is retained for backward-compatible data and is interpreted as unknown.
+type LearningOutcome string
+
+const (
+	LearningOutcomeCorrect    LearningOutcome = "correct"
+	LearningOutcomeIncorrect  LearningOutcome = "incorrect"
+	LearningOutcomeUnderstood LearningOutcome = "understood"
+	LearningOutcomeCompleted  LearningOutcome = "completed"
+	LearningOutcomeUnknown    LearningOutcome = "unknown"
+)
+
+var ErrInvalidLearningOutcome = errors.New("invalid learning outcome")
+
+// NormalizeLearningOutcome maps a legacy empty value to unknown and rejects
+// unsupported values instead of treating them as successful evidence.
+func NormalizeLearningOutcome(outcome LearningOutcome) (LearningOutcome, error) {
+	if outcome == "" {
+		return LearningOutcomeUnknown, nil
+	}
+	switch outcome {
+	case LearningOutcomeCorrect,
+		LearningOutcomeIncorrect,
+		LearningOutcomeUnderstood,
+		LearningOutcomeCompleted,
+		LearningOutcomeUnknown:
+		return outcome, nil
+	default:
+		return "", ErrInvalidLearningOutcome
+	}
+}
+
 type LearningEvent struct {
-	ID        string    `json:"id"`
-	StudentID string    `json:"studentId"`
-	ClassID   string    `json:"classId"`
-	Kind      string    `json:"kind"`
-	Summary   string    `json:"summary"`
-	KP        string    `json:"knowledgePoint,omitempty"`
-	At        time.Time `json:"at"`
+	ID        string          `json:"id"`
+	StudentID string          `json:"studentId"`
+	ClassID   string          `json:"classId"`
+	Kind      string          `json:"kind"`
+	Summary   string          `json:"summary"`
+	KP        string          `json:"knowledgePoint,omitempty"`
+	Outcome   LearningOutcome `json:"outcome,omitempty"`
+	At        time.Time       `json:"at"`
 }
 
 type Mistake struct {
-	StudentID      string `json:"studentId"`
-	ClassID        string `json:"classId"`
-	KnowledgePoint string `json:"knowledgePoint"`
-	QuestionStem   string `json:"questionStem"`
-	ErrorCause     string `json:"errorCause"`
+	StudentID      string    `json:"studentId"`
+	ClassID        string    `json:"classId"`
+	KnowledgePoint string    `json:"knowledgePoint"`
+	QuestionStem   string    `json:"questionStem"`
+	ErrorCause     string    `json:"errorCause"`
 	CreatedAt      time.Time `json:"createdAt"`
 }
 
 type PracticeSession struct {
-	ID              string         `json:"id"`
-	StudentID       string         `json:"studentId"`
-	ClassID         string         `json:"classId"`
-	KnowledgePoint  string         `json:"knowledgePoint"`
-	Difficulty      string         `json:"difficulty"`
-	QuestionCount   int            `json:"questionCount"`
-	ConsecutiveOK   int            `json:"consecutiveCorrect"`
-	HintsUsed       int            `json:"hintsUsed"`
-	ErrorType       string         `json:"errorType"`
-	MasteryEvidence []string       `json:"masteryEvidence"`
-	CurrentQuestion map[string]any `json:"currentQuestion,omitempty"`
+	ID              string           `json:"id"`
+	StudentID       string           `json:"studentId"`
+	ClassID         string           `json:"classId"`
+	KnowledgePoint  string           `json:"knowledgePoint"`
+	Difficulty      string           `json:"difficulty"`
+	QuestionCount   int              `json:"questionCount"`
+	ConsecutiveOK   int              `json:"consecutiveCorrect"`
+	HintsUsed       int              `json:"hintsUsed"`
+	ErrorType       string           `json:"errorType"`
+	MasteryEvidence []string         `json:"masteryEvidence"`
+	CurrentQuestion map[string]any   `json:"currentQuestion,omitempty"`
 	History         []map[string]any `json:"history"`
-	Finished        bool           `json:"finished"`
-	FinishReason    string         `json:"finishReason,omitempty"`
+	Finished        bool             `json:"finished"`
+	FinishReason    string           `json:"finishReason,omitempty"`
 }
 
 type TutorSession struct {
-	ID            string   `json:"id"`
-	StudentID     string   `json:"studentId"`
-	ClassID       string   `json:"classId"`
-	QuestionID    string   `json:"questionId"`
-	Round         int      `json:"round"`
-	HitStreak     int      `json:"hitStreak"`
-	MaxRounds     int      `json:"maxRounds"`
-	Released      bool     `json:"answerReleased"`
-	FullSolution  string   `json:"fullSolution,omitempty"`
-	LastPrompt    string   `json:"lastPrompt"`
-	History       []string `json:"history"`
+	ID           string   `json:"id"`
+	StudentID    string   `json:"studentId"`
+	ClassID      string   `json:"classId"`
+	QuestionID   string   `json:"questionId"`
+	Round        int      `json:"round"`
+	HitStreak    int      `json:"hitStreak"`
+	MaxRounds    int      `json:"maxRounds"`
+	Released     bool     `json:"answerReleased"`
+	FullSolution string   `json:"fullSolution,omitempty"`
+	LastPrompt   string   `json:"lastPrompt"`
+	History      []string `json:"history"`
 }
 
 type ClassroomSession struct {
-	ID        string            `json:"id"`
-	ClassID   string            `json:"classId"`
-	Prompt    string            `json:"prompt"`
-	Answers   []ClassroomAnswer `json:"answers"`
-	Clusters  []map[string]any  `json:"clusters,omitempty"`
+	ID       string            `json:"id"`
+	ClassID  string            `json:"classId"`
+	Prompt   string            `json:"prompt"`
+	Answers  []ClassroomAnswer `json:"answers"`
+	Clusters []map[string]any  `json:"clusters,omitempty"`
 }
 
 type ClassroomAnswer struct {
@@ -183,11 +217,11 @@ type SimilarityHit struct {
 type Memory struct {
 	mu sync.RWMutex
 
-	Materials       map[string]Material
-	Assignments     map[string]Assignment
-	Contents        map[string]ContentRecord
-	Tasks           map[string]TaskRecord
-	Submissions     map[string]Submission
+	Materials     map[string]Material
+	Assignments   map[string]Assignment
+	Contents      map[string]ContentRecord
+	Tasks         map[string]TaskRecord
+	Submissions   map[string]Submission
 	Mistakes      []Mistake
 	Events        []LearningEvent
 	Practice      map[string]PracticeSession
