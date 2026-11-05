@@ -307,10 +307,12 @@ MCP 服务实现 `initialize`、`tools/list` 和 `tools/call`，使用 Bearer To
 make up
 ```
 
-完成后打开：
+完成后打开（默认仅 Nginx 映射宿主机，`APP_PORT=18088`）：
 
-- http://localhost （Nginx 统一入口）
-- 或 http://localhost:5173
+- http://127.0.0.1:18088 （Nginx 统一入口 / 健康检查）
+- 本地前端开发：http://127.0.0.1:5173
+
+验收基线：`make verify`（OpenSpec、Go 测试、前端构建、Compose 配置）。
 
 ### 测试账号（演示环境）
 
@@ -324,8 +326,8 @@ make up
 接口调试时在 Header 带 `Authorization: Bearer <token>`，对应 Token 为 `teacher-demo` / `student-demo` / `student-demo-2`。
 
 ```bash
-# 示例：教师登录
-curl -s -X POST http://localhost:8080/api/v1/auth/login \
+# 示例：教师登录（经 Nginx）
+curl -s -X POST http://127.0.0.1:18088/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"teacher","password":"demo123"}'
 ```

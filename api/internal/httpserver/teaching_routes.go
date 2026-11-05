@@ -16,25 +16,23 @@ type teachingHTTPHandler struct {
 func registerTeachingRoutes(mux *http.ServeMux, pipeline teaching.Pipeline) {
 	handler := &teachingHTTPHandler{pipeline: pipeline}
 
+	// 刘恺骐：智能内容生产与统一编排（骨架占位，统一 501）。
+	// 智能命题 / 智能备课 / 智能预习单 / 虚拟学生课堂演练
 	mux.HandleFunc("POST /api/v1/skills/proposition", handler.start(teaching.SkillProposition))
 	mux.HandleFunc("POST /api/v1/skills/lesson-plan", handler.start(teaching.SkillLessonPlan))
 	mux.HandleFunc("POST /api/v1/skills/preview-sheet", handler.start(teaching.SkillPreviewSheet))
 	mux.HandleFunc("POST /api/v1/skills/virtual-classroom", handler.start(teaching.SkillVirtualClassroom))
 
-	mux.HandleFunc("POST /api/v1/skills/multimodal-grade", handler.start(teaching.SkillMultimodalGrade))
-	mux.HandleFunc("POST /api/v1/skills/class-review", handler.start(teaching.SkillClassReview))
-	mux.HandleFunc("POST /api/v1/skills/diagnosis", handler.start(teaching.SkillDiagnosis))
-	mux.HandleFunc("POST /api/v1/skills/answer-replay", handler.start(teaching.SkillAnswerReplay))
-
+	// 刘沛鑫：个性化辅导与课堂互动（骨架占位，统一 501）。
+	// 个性化复习路径 / 追问式辅导 / 课堂回答聚类 / 自适应练习闯关
 	mux.HandleFunc("POST /api/v1/skills/review-path", handler.start(teaching.SkillReviewPath))
 	mux.HandleFunc("POST /api/v1/skills/socratic-tutor", handler.start(teaching.SkillSocraticTutor))
 	mux.HandleFunc("POST /api/v1/skills/classroom-cluster", handler.start(teaching.SkillClassroomCluster))
 	mux.HandleFunc("POST /api/v1/skills/adaptive-practice", handler.start(teaching.SkillAdaptivePractice))
 
-	mux.HandleFunc("POST /api/v1/contents/{id}/confirm", handler.confirm)
-	mux.HandleFunc("POST /api/v1/contents/{id}/publish", handler.publish)
-	mux.HandleFunc("PUT /api/v1/classes/{classID}/skills", teachingNotImplemented)
-	mux.HandleFunc("GET /api/v1/tasks/{taskID}", handler.task)
+	// 杨瑾文：作业评价与班级分析（实装路由）。
+	// 多模态主观题批改 / 班级讲评 / 学习诊断 / 作答过程回放与原创性审查
+	teaching.RegisterEvaluationRoutes(mux)
 }
 
 func (h *teachingHTTPHandler) start(skill teaching.SkillID) http.HandlerFunc {
@@ -45,30 +43,6 @@ func (h *teachingHTTPHandler) start(skill teaching.SkillID) http.HandlerFunc {
 		}
 		httpapi.WriteJSON(w, http.StatusAccepted, record)
 	}
-}
-
-func (h *teachingHTTPHandler) confirm(w http.ResponseWriter, r *http.Request) {
-	err := h.pipeline.Confirm(r.Context(), r.PathValue("id"), nil)
-	if writePipelineError(w, r, err) {
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *teachingHTTPHandler) publish(w http.ResponseWriter, r *http.Request) {
-	err := h.pipeline.Publish(r.Context(), r.PathValue("id"))
-	if writePipelineError(w, r, err) {
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *teachingHTTPHandler) task(w http.ResponseWriter, r *http.Request) {
-	record, err := h.pipeline.Resume(r.Context(), r.PathValue("taskID"))
-	if writePipelineError(w, r, err) {
-		return
-	}
-	httpapi.WriteJSON(w, http.StatusOK, record)
 }
 
 func writePipelineError(w http.ResponseWriter, r *http.Request, err error) bool {

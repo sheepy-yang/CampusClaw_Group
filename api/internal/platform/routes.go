@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/auth"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/httpapi"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/store"
 )
 
@@ -27,7 +28,7 @@ func withAuth(next func(http.ResponseWriter, *http.Request, auth.Principal)) htt
 	return func(w http.ResponseWriter, r *http.Request) {
 		p, err := auth.Authenticate(r.Context(), r.Header.Get("Authorization"))
 		if err != nil {
-			writeErr(w, http.StatusUnauthorized, "unauthorized")
+			writeErr(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 			return
 		}
 		next(w, r, p)
@@ -37,7 +38,7 @@ func withAuth(next func(http.ResponseWriter, *http.Request, auth.Principal)) htt
 func withTeacher(next func(http.ResponseWriter, *http.Request, auth.Principal)) http.HandlerFunc {
 	return withAuth(func(w http.ResponseWriter, r *http.Request, p auth.Principal) {
 		if err := auth.RequireTeacher(p); err != nil {
-			writeErr(w, http.StatusForbidden, "forbidden")
+			writeErr(w, r, http.StatusForbidden, "FORBIDDEN", "forbidden")
 			return
 		}
 		next(w, r, p)
@@ -48,7 +49,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
-		Role     string `json:"role"` // 兼容：仅传 role 时一键登录
+		Role     string `json:"role"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
@@ -67,36 +68,38 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		token, p, err = auth.Login(role)
 	}
 	if err != nil {
-		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		writeErr(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpapi.WriteJSON(w, http.StatusOK, map[string]any{
 		"token": token,
 		"user":  p,
 	})
 }
 
-func handleLogout(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	httpapi.WriteJSON(w, http.StatusOK, map[string]string{"ok": "true"})
+	_ = r
 }
 
-func handleMe(w http.ResponseWriter, _ *http.Request, p auth.Principal) {
-	writeJSON(w, http.StatusOK, p)
+func handleMe(w http.ResponseWriter, r *http.Request, p auth.Principal) {
+	httpapi.WriteJSON(w, http.StatusOK, p)
+	_ = r
 }
 
 func handleListMaterials(w http.ResponseWriter, r *http.Request, p auth.Principal) {
 	classID := r.PathValue("classID")
 	if classID != p.ClassID {
-		writeErr(w, http.StatusNotFound, "not found")
+		writeErr(w, r, http.StatusNotFound, "NOT_FOUND", "not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, store.Default.MaterialsByClass(classID))
+	httpapi.WriteJSON(w, http.StatusOK, store.Default.MaterialsByClass(classID))
 }
 
 func handleCreateMaterial(w http.ResponseWriter, r *http.Request, p auth.Principal) {
 	classID := r.PathValue("classID")
 	if classID != p.ClassID {
-		writeErr(w, http.StatusNotFound, "not found")
+		writeErr(w, r, http.StatusNotFound, "NOT_FOUND", "not found")
 		return
 	}
 	var body store.Material
@@ -106,13 +109,13 @@ func handleCreateMaterial(w http.ResponseWriter, r *http.Request, p auth.Princip
 	store.Default.Lock()
 	store.Default.Materials[body.ID] = body
 	store.Default.Unlock()
-	writeJSON(w, http.StatusCreated, body)
+	httpapi.WriteJSON(w, http.StatusCreated, body)
 }
 
 func handleListAssignments(w http.ResponseWriter, r *http.Request, p auth.Principal) {
 	classID := r.PathValue("classID")
 	if classID != p.ClassID {
-		writeErr(w, http.StatusNotFound, "not found")
+		writeErr(w, r, http.StatusNotFound, "NOT_FOUND", "not found")
 		return
 	}
 	store.Default.Lock()
@@ -131,13 +134,13 @@ func handleListAssignments(w http.ResponseWriter, r *http.Request, p auth.Princi
 		}
 		out = append(out, cp)
 	}
-	writeJSON(w, http.StatusOK, out)
+	httpapi.WriteJSON(w, http.StatusOK, out)
 }
 
 func handleCreateAssignment(w http.ResponseWriter, r *http.Request, p auth.Principal) {
 	classID := r.PathValue("classID")
 	if classID != p.ClassID {
-		writeErr(w, http.StatusNotFound, "not found")
+		writeErr(w, r, http.StatusNotFound, "NOT_FOUND", "not found")
 		return
 	}
 	var body store.Assignment
@@ -150,21 +153,14 @@ func handleCreateAssignment(w http.ResponseWriter, r *http.Request, p auth.Princ
 	store.Default.Lock()
 	store.Default.Assignments[body.ID] = body
 	store.Default.Unlock()
-	writeJSON(w, http.StatusCreated, body)
+	httpapi.WriteJSON(w, http.StatusCreated, body)
 }
 
-func handleAudit(w http.ResponseWriter, _ *http.Request, p auth.Principal) {
-	writeJSON(w, http.StatusOK, store.Default.ListAudit(p.ClassID))
+func handleAudit(w http.ResponseWriter, r *http.Request, p auth.Principal) {
+	httpapi.WriteJSON(w, http.StatusOK, store.Default.ListAudit(p.ClassID))
+	_ = r
 }
 
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+func writeErr(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
+	httpapi.WriteError(w, r, status, code, msg)
 }

@@ -81,19 +81,26 @@ func NewWorker() *Worker {
 	return w
 }
 
-func (w *Worker) Run() error {
+// Run consumes in-memory jobs until ctx is cancelled.
+// Compose 中的独立 worker 进程与 API 不共享内存队列，仅保持可优雅退出的生命周期；
+// 评价异步任务由 API 进程内 EnsureEmbedded 消费。
+func (w *Worker) Run(ctx context.Context) error {
 	log.Println("queue worker listening (in-memory)")
-	for job := range w.enqueuer.ch {
-		if job.IdempotencyKey != "" && !store.Default.MarkJobDone(job.IdempotencyKey) {
-			log.Printf("skip duplicate job %s key=%s", job.ID, job.IdempotencyKey)
-			continue
-		}
-		if err := w.Handle(context.Background(), job); err != nil {
-			log.Printf("job %s (%s) failed: %v", job.ID, job.Type, err)
-			updateTaskStatus(job, "failed", err.Error())
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case job := <-w.enqueuer.ch:
+			if job.IdempotencyKey != "" && !store.Default.MarkJobDone(job.IdempotencyKey) {
+				log.Printf("skip duplicate job %s key=%s", job.ID, job.IdempotencyKey)
+				continue
+			}
+			if err := w.Handle(context.Background(), job); err != nil {
+				log.Printf("job %s (%s) failed: %v", job.ID, job.Type, err)
+				updateTaskStatus(job, "failed", err.Error())
+			}
 		}
 	}
-	return nil
 }
 
 // RunOnce 处理单任务（测试 / API 内嵌 worker）。
@@ -148,7 +155,7 @@ var _ Enqueuer = (*MemoryEnqueuer)(nil)
 func StartEmbedded() {
 	w := NewWorker()
 	go func() {
-		_ = w.Run()
+		_ = w.Run(context.Background())
 	}()
 }
 

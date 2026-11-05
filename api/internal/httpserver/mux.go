@@ -7,7 +7,6 @@ import (
 
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/health"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/httpapi"
-	"github.com/sheepy-yang/CampusClaw_Group/api/internal/platform"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/teaching"
 )
 
@@ -19,7 +18,7 @@ type Dependencies struct {
 	TeachingPipeline teaching.Pipeline
 }
 
-// NewMux registers operational health checks and business routes.
+// NewMux registers the operational skeleton and declared business routes.
 func NewMux(deps Dependencies) http.Handler {
 	if deps.Logger == nil {
 		deps.Logger = slog.Default()
@@ -37,17 +36,16 @@ func NewMux(deps Dependencies) http.Handler {
 		}
 		httpapi.WriteJSON(w, status, report)
 	})
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		httpapi.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
 
-	// 业务路由：本地已实现的平台与十二项技能入口
-	platform.RegisterRoutes(mux)
-	teaching.RegisterRoutes(mux)
+	// 平台服务
+	registerPlatformRoutes(mux)
+
+	// 十二项教学技能：刘恺骐/刘沛鑫模块为 501 骨架；杨瑾文评价模块挂载实装路由
+	registerTeachingRoutes(mux, deps.TeachingPipeline)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
 	})
 
-	return CORSMiddleware(requestLogging(deps.Logger, mux))
+	return requestLogging(deps.Logger, mux)
 }

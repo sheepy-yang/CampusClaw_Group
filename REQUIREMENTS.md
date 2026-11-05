@@ -39,18 +39,18 @@ docker compose version
 等价于：
 
 ```bash
-cp -n .env.example .env   # 已有 .env 则跳过
+make env                  # 从 .env.example 填充演示默认值
 docker compose up -d --build
+# 或：./deploy.sh
 ```
 
-部署成功后访问：
+部署成功后访问（默认 `APP_PORT=18088`，仅 Nginx 对宿主机暴露）：
 
 | 入口 | 地址 |
 | --- | --- |
-| 统一入口（Nginx） | http://localhost |
-| 前端开发服务 | http://localhost:5173 |
-| API 健康检查 | http://localhost:8080/healthz |
-| MCP 健康检查 | http://localhost:8100/healthz |
+| 统一入口（Nginx） | http://127.0.0.1:18088 |
+| 健康检查 | http://127.0.0.1:18088/health |
+| 本地前端开发 | http://127.0.0.1:5173（Vite，`/api` 与 `/health` 代理到 API） |
 
 演示登录（详见 README「测试账号」）：
 
@@ -72,28 +72,28 @@ docker compose up -d --build
 或使用 Make：
 
 ```bash
+make verify   # OpenSpec + 测试 + 前端构建 + Compose 校验
 make up       # 一键部署
 make down     # 停止
 make logs     # 日志
-make status   # 状态
 ```
 
 ---
 
 ## 3. 运行时服务与端口
 
-| 服务 | 容器名意图 | 宿主机端口 | 说明 |
-| --- | --- | --- | --- |
-| nginx | 反向代理 | **80** | 浏览器统一入口 |
-| web | React + Vite | 5173 | 前端；`/api` 代理到 API |
-| api | Go API（内嵌 Worker） | 8080 | 教学技能与平台接口 |
-| mcp | mcp-teaching-tools | 8100 | 教学 MCP 工具 |
-| mysql | MySQL 8.0 | 3306 | 业务库（主路径可先用内存，库已就绪） |
-| redis | Redis 7 | 6379 | 异步任务扩展预留 |
-| qdrant | Qdrant | 6333 | 向量检索扩展预留 |
-| minio | MinIO | 9000 / 9001 | 对象存储扩展预留 |
+对齐远程骨架：`docker-compose.yml` **只把 Nginx 映射到宿主机**；API / MCP / 数据依赖仅在 Compose 网络内可达。
 
-端口冲突时，修改 `docker-compose.yml` 的 `ports` 映射或释放占用端口。
+| 服务 | 说明 | 宿主机 |
+| --- | --- | --- |
+| nginx | 反向代理（`/health`、`/api/`、静态前端） | `${APP_PORT}:80`（默认 18088） |
+| web | React 静态资源 | 不暴露 |
+| api | Go API（评价异步任务由进程内嵌 Worker 消费） | 不暴露 |
+| worker | 生命周期骨架进程（不与 API 共享内存队列） | 不暴露 |
+| mcp | MCP JSON-RPC 鉴权与工具声明 | 不暴露 |
+| mysql / redis / qdrant / minio | 依赖服务 | 不暴露 |
+
+本地调试可直接 `go run` API（`HTTP_PORT=8080`）并用 Vite 代理。
 
 ---
 
@@ -103,17 +103,13 @@ make status   # 状态
 
 | 变量 | 是否必填 | 说明 |
 | --- | --- | --- |
-| `SESSION_SECRET` | 建议填写 | 会话签名密钥；演示可留空或使用示例值 |
-| `MCP_TOKEN` | 建议填写 | API 调用 MCP 的 Bearer Token，默认 `dev-mcp-token` |
-| `MCP_BASE_URL` | 容器内默认 | Compose 中为 `http://mcp:8100` |
-| `MYSQL_DSN` | 有默认 | MySQL 连接串 |
-| `REDIS_URL` | 有默认 | Redis 地址 |
-| `QDRANT_URL` | 有默认 | Qdrant 地址 |
-| `MINIO_*` | 有默认 | 对象存储凭证（演示账号，生产必须更换） |
-| `LLM_API_KEY` | 可选 | 为空则使用离线演示合成，不调外部大模型 |
-| `LLM_BASE_URL` | 可选 | 真实模型网关地址 |
-| `EMBEDDING_API_KEY` / `EMBEDDING_BASE_URL` | 可选 | 向量模型 |
-| `HTTP_PORT` | 可选 | API 监听端口，默认 `8080` |
+| `APP_ENV` / `APP_PORT` / `HTTP_PORT` / `MCP_PORT` | 必填 | Compose 使用 `${NAME:?}`；`make env` 会写入演示值 |
+| `SHUTDOWN_TIMEOUT` / `HEALTH_TIMEOUT` | 必填 | 优雅退出与探活超时 |
+| `SESSION_SECRET` | 必填 | ≥16 字符；演示默认 `dev-session-secret` |
+| `MCP_TOKEN` | 必填 | MCP Bearer；演示默认 `dev-mcp-token` |
+| `MYSQL_ADDR` / `REDIS_ADDR` / `QDRANT_URL` / `MINIO_URL` / `MCP_URL` | 必填 | API 健康检查与依赖地址 |
+| `MYSQL_*` / `MINIO_ROOT_*` | 必填 | 数据服务启动凭证 |
+| `LLM_*` / `EMBEDDING_*` | 可选 | 为空则离线演示合成 |
 
 **安全约束（与 README 一致）：**
 
@@ -200,16 +196,20 @@ cd web && npm install && npm run dev          # :5173
 ## 7. 验收冒烟（部署后）
 
 ```bash
-curl -s http://localhost:8080/healthz
-# 期望：{"status":"ok"}
+curl -s http://127.0.0.1:18088/health
+# 期望：HTTP 200，status=up，checks 含 mysql/redis/qdrant/minio/mcp
 
-curl -s -X POST http://localhost:8080/api/v1/auth/login \
+curl -s -X POST http://127.0.0.1:18088/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"role":"teacher"}'
 # 期望：返回 token
+
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:18088/api/v1/skills/proposition
+# 期望：501（刘恺骐内容生产模块仍为骨架占位；刘沛鑫辅导模块同理）
 ```
 
-浏览器打开 http://localhost ，教师登录后可运行「智能命题」等技能。
+浏览器打开 http://127.0.0.1:18088 ，教师登录后可验收杨瑾文四项评价技能；
+刘恺骐（命题/备课/预习/虚拟课堂）与刘沛鑫（复习路径/追问辅导/课堂聚类/自适应闯关）入口保留 501。
 
 ---
 
@@ -218,7 +218,7 @@ curl -s -X POST http://localhost:8080/api/v1/auth/login \
 | 现象 | 处理 |
 | --- | --- |
 | `docker compose` 不可用 | 升级 Docker Desktop，或安装 Compose v2 插件 |
-| 80 端口被占用 | 改 `docker-compose.yml` 中 nginx 端口，或关闭占用进程 |
+| `APP_PORT` 被占用 | 修改 `.env` 中 `APP_PORT` 后 `./deploy.sh restart` |
 | 构建拉镜像失败 | 配置镜像加速 / 代理后重试 `./deploy.sh restart` |
 | API 报 MCP 失败 | 确认 `mcp` 容器 healthy，且 `.env` 中 `MCP_TOKEN` 与 mcp 服务一致 |
 | 未配置 LLM Key | 正常；系统使用离线演示合成，主路径仍可验收 |

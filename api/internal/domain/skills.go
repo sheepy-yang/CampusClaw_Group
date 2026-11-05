@@ -4,27 +4,63 @@ package domain
 type SkillID string
 
 const (
+	// 刘恺骐：智能内容生产与统一编排
 	SkillProposition      SkillID = "proposition"
 	SkillLessonPlan       SkillID = "lesson_plan"
-	SkillVirtualClassroom SkillID = "virtual_classroom"
-	SkillMultimodalGrade  SkillID = "multimodal_grade"
-	SkillAnswerReplay     SkillID = "answer_replay"
-	SkillClassReview      SkillID = "class_review"
-	SkillDiagnosis        SkillID = "diagnosis"
-	SkillReviewPath       SkillID = "review_path"
-	SkillAdaptivePractice SkillID = "adaptive_practice"
 	SkillPreviewSheet     SkillID = "preview_sheet"
+	SkillVirtualClassroom SkillID = "virtual_classroom"
+
+	// 杨瑾文：作业评价与班级分析
+	SkillMultimodalGrade SkillID = "multimodal_grade"
+	SkillClassReview     SkillID = "class_review"
+	SkillDiagnosis       SkillID = "diagnosis"
+	SkillAnswerReplay    SkillID = "answer_replay"
+
+	// 刘沛鑫：个性化辅导与课堂互动
+	SkillReviewPath       SkillID = "review_path"
 	SkillSocraticTutor    SkillID = "socratic_tutor"
 	SkillClassroomCluster SkillID = "classroom_cluster"
+	SkillAdaptivePractice SkillID = "adaptive_practice"
 )
+
+// Owner 技能负责人（与 README 分工一致）。
+type Owner string
+
+const (
+	OwnerLiuKaiqi   Owner = "刘恺骐"
+	OwnerYangJinwen Owner = "杨瑾文"
+	OwnerLiuPeixin  Owner = "刘沛鑫"
+)
+
+func (s SkillID) Owner() Owner {
+	switch s {
+	case SkillProposition, SkillLessonPlan, SkillPreviewSheet, SkillVirtualClassroom:
+		return OwnerLiuKaiqi
+	case SkillMultimodalGrade, SkillClassReview, SkillDiagnosis, SkillAnswerReplay:
+		return OwnerYangJinwen
+	case SkillReviewPath, SkillSocraticTutor, SkillClassroomCluster, SkillAdaptivePractice:
+		return OwnerLiuPeixin
+	default:
+		return ""
+	}
+}
 
 func AllSkills() []SkillID {
 	return []SkillID{
-		SkillProposition, SkillLessonPlan, SkillVirtualClassroom,
-		SkillMultimodalGrade, SkillAnswerReplay, SkillClassReview, SkillDiagnosis,
-		SkillReviewPath, SkillAdaptivePractice, SkillPreviewSheet,
-		SkillSocraticTutor, SkillClassroomCluster,
+		SkillProposition, SkillLessonPlan, SkillPreviewSheet, SkillVirtualClassroom,
+		SkillMultimodalGrade, SkillClassReview, SkillDiagnosis, SkillAnswerReplay,
+		SkillReviewPath, SkillSocraticTutor, SkillClassroomCluster, SkillAdaptivePractice,
 	}
+}
+
+func SkillsByOwner(owner Owner) []SkillID {
+	var out []SkillID
+	for _, s := range AllSkills() {
+		if s.Owner() == owner {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // ContentStatus 教案 / 预习单 / 讲评 / 诊断等内容生命周期。

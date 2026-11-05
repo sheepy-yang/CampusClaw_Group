@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/health"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/httpapi"
 )
 
 type fakeChecker struct {
@@ -99,7 +100,7 @@ func TestRequestIDPropagationAndSanitization(t *testing.T) {
 	}
 }
 
-func TestDeclaredBusinessRouteRequiresAuth(t *testing.T) {
+func TestDeclaredBusinessRouteReturnsStructuredNotImplemented(t *testing.T) {
 	var logs bytes.Buffer
 	handler := newTestHandler(&logs)
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/skills/proposition", nil)
@@ -108,11 +109,14 @@ func TestDeclaredBusinessRouteRequiresAuth(t *testing.T) {
 
 	handler.ServeHTTP(response, request)
 
-	// 技能路由已实现，未带 Token 时统一返回 401。
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	if response.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotImplemented)
 	}
-	if got := response.Header().Get("X-Request-ID"); got != "business-placeholder" {
-		t.Fatalf("request id = %q", got)
+	var apiErr httpapi.ErrorResponse
+	if err := json.NewDecoder(response.Body).Decode(&apiErr); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if apiErr.Code != "NOT_IMPLEMENTED" || apiErr.RequestID != "business-placeholder" {
+		t.Fatalf("unexpected error response: %#v", apiErr)
 	}
 }
