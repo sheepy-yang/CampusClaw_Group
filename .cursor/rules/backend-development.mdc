@@ -1,0 +1,18 @@
+---
+description: Go API 分层、接口、错误、事务、幂等与配置约束
+globs: "{api,mcp-teaching-tools}/**/*.go"
+alwaysApply: false
+---
+
+# 后端开发规范
+
+- 依赖方向固定为 Transport → Application → Domain/Port，Adapter 只实现 Port；禁止反向导入。
+- `cmd/` 只负责配置、依赖装配、生命周期和启动，不放业务逻辑。
+- HTTP 接口统一使用 `/api/v1`，请求与响应使用明确 DTO，不在领域边界扩散 `map[string]any`。
+- 错误响应统一包含 `code`、`message`、`request_id`；未知错误不暴露内部细节。
+- 参数在 Transport 层校验，角色、班级和资源归属在 Application 层逐资源校验。
+- 非法筛选必须返回 400，禁止退化为无条件全量查询。
+- 数据库事务内不得调用 LLM、向量库、对象存储或 MCP 等外部依赖。
+- 创建任务、发布和重试接口必须声明幂等键；排序必须包含唯一兜底字段。
+- 所有配置从环境变量加载；必填配置缺失或非法时启动失败。
+- 新接口必须同步更新 OpenSpec、OpenAPI、错误码和自动化测试。

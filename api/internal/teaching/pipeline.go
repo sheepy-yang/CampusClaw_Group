@@ -5,6 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/agent"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/gateway"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/mcpclient"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/queue"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/retrieval"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/security"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/store"
 )
 
@@ -31,10 +37,28 @@ type Pipeline interface {
 	Publish(ctx context.Context, taskID string) error
 }
 
-// DefaultPipeline 内存实现。
-type DefaultPipeline struct{}
+// PipelineDependencies are ports assembled by cmd/server（与远程工程框架对齐）。
+type PipelineDependencies struct {
+	Orchestrator   agent.Orchestrator
+	ContentAgent   agent.ContentAgent
+	VirtualStudent agent.VirtualStudentAgent
+	Verifier       agent.VerifierAgent
+	Model          gateway.Client
+	Retriever      retrieval.Retriever
+	MCP            mcpclient.Host
+	Queue          queue.Enqueuer
+	Audit          security.AuditLogger
+}
 
-func NewPipeline() Pipeline { return &DefaultPipeline{} }
+// DefaultPipeline 内存实现。
+type DefaultPipeline struct {
+	deps PipelineDependencies
+}
+
+// NewPipeline 兼容远程装配签名；演示主路径仍使用内存实现。
+func NewPipeline(deps PipelineDependencies) Pipeline {
+	return &DefaultPipeline{deps: deps}
+}
 
 func toStoreTask(t TaskRecord) store.TaskRecord {
 	steps := make([]store.TaskStep, len(t.Steps))

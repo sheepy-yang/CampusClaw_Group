@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 *.exe
 *.dll
 *.so
@@ -9,6 +11,8 @@ bin/
 dist/
 node_modules/
 web/dist/
+*.tsbuildinfo
+.vite/
 .DS_Store
 data/
 *.log

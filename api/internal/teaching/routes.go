@@ -31,7 +31,7 @@ func newDeps() *apiDeps {
 		Content: content.New(orch, &agent.DefaultVerifierAgent{}, enq),
 		Eval:    evaluation.New(evalJobSink{q: enq}),
 		Tutor:   tutoring.New(orch, &agent.DefaultVerifierAgent{}),
-		Pipe:    NewPipeline(),
+		Pipe:    NewPipeline(PipelineDependencies{}),
 		Audit:   security.NewAuditLogger(),
 	}
 }

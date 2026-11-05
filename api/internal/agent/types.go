@@ -12,9 +12,15 @@ type StructuredResult struct {
 
 // Citation 可回溯引用（讲义切片 / 用户提交文本等）。
 type Citation struct {
-	SourceID string
-	Snippet  string
-	Score    float64
+	RetrievalRunID string
+	SourceID       string
+	SourceVersion  string
+	ChunkID        string
+	CharacterStart int
+	CharacterEnd   int
+	ContentHash    string
+	Snippet        string
+	Score          float64
 }
 
 // ModelMeta 用于审计追溯的模型 / 提示词 / 技能版本。
