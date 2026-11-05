@@ -75,6 +75,29 @@ func (a *DefaultContentAgent) Generate(ctx context.Context, input map[string]any
 	if payload == nil {
 		payload = map[string]any{"text": resp.Text}
 	}
+	switch skill {
+	case "复习路径", "review_path":
+		if countObjectItems(payload["steps"]) == 0 {
+			target := fmt.Sprint(input["targetKnowledgePoint"])
+			payload = map[string]any{"steps": []map[string]any{
+				{"type": "read", "title": "回顾关键概念", "detail": "结合讲义重新梳理定义与条件", "knowledgePoint": target},
+				{"type": "example", "title": "分析典型例题", "detail": "定位易错步骤并解释原因", "knowledgePoint": target},
+				{"type": "practice", "title": "完成针对性练习", "detail": "用新题检验是否真正掌握", "knowledgePoint": target},
+			}}
+		}
+	case "聚类", "classroom_cluster":
+		if countObjectItems(payload["clusters"]) == 0 {
+			groups, _ := input["groups"].([]map[string]any)
+			clusters := make([]map[string]any, 0, len(groups))
+			for _, group := range groups {
+				clusters = append(clusters, map[string]any{
+					"groupId": group["groupId"], "memberIds": group["members"],
+					"label": "相似作答思路", "followUp": "请说明这个步骤成立所依据的条件。",
+				})
+			}
+			payload = map[string]any{"clusters": clusters}
+		}
+	}
 	return &StructuredResult{
 		Payload:    payload,
 		Confidence: 0.85,
@@ -88,15 +111,45 @@ type DefaultVirtualStudentAgent struct{ LLM gateway.Client }
 func (a *DefaultVirtualStudentAgent) Simulate(ctx context.Context, lessonPlanID string, roles []string, rounds int) (*StructuredResult, error) {
 	resp, err := a.LLM.Chat(ctx, gateway.ChatRequest{
 		Messages: []gateway.ChatMessage{{
+			Role: "system",
+			Content: "你是虚拟课堂演练智能体。以下全部角色都是合成角色，不代表真实学生。只能依据给定教案演练。仅输出 JSON，格式为" +
+				`{"dialogue":[{"round":1,"role":"角色名","utterance":"提问或典型误解","teacherResponse":"建议回应","basis":"教案依据"}],` +
+				`"risks":[{"round":1,"risk":"可能卡点","basis":"教案依据"}],"suggestions":["可执行的教案修改建议"]}。`,
+		}, {
 			Role:    "user",
-			Content: fmt.Sprintf("虚拟课堂演练 lesson=%s roles=%v rounds=%d", lessonPlanID, roles, rounds),
+			Content: fmt.Sprintf("教案=%s\n合成角色=%v\n轮数=%d", lessonPlanID, roles, rounds),
 		}},
 	})
 	if err != nil {
 		return nil, err
 	}
+	payload := resp.RawJSON
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	if countObjectItems(payload["dialogue"]) == 0 {
+		dialogue := make([]map[string]any, 0, len(roles))
+		risks := make([]map[string]any, 0, len(roles))
+		for index, role := range roles {
+			round := index%rounds + 1
+			dialogue = append(dialogue, map[string]any{
+				"round": round, "role": role,
+				"utterance":       "我能否说明当前教学步骤与前一概念之间的关系？",
+				"teacherResponse": "请先复述教案中的关键条件，再用一个反例检查自己的理解。",
+				"basis":           "所选教案的目标、重难点与教学过程",
+			})
+			risks = append(risks, map[string]any{
+				"round": round, "risk": role + "角色可能在条件辨析与步骤衔接处停顿",
+				"basis": "所选教案的重难点与教学过程",
+			})
+		}
+		payload["dialogue"] = dialogue
+		payload["risks"] = risks
+		payload["suggestions"] = []string{"在关键步骤前增加条件复述和反例检查，并在修改后再次演练。"}
+		payload["generationMode"] = "offline_demo"
+	}
 	return &StructuredResult{
-		Payload:    resp.RawJSON,
+		Payload:    payload,
 		Confidence: 0.8,
 		ModelMeta:  ModelMeta{Model: resp.Model, PromptVersion: "v1", SkillVersion: "v1"},
 	}, nil
@@ -208,8 +261,13 @@ func countCards(v any) int {
 	}
 }
 
-type StubOrchestrator = DefaultOrchestrator
-type StubContentAgent = DefaultContentAgent
-type StubVirtualStudentAgent = DefaultVirtualStudentAgent
-type StubVerifierAgent = DefaultVerifierAgent
-type StubTutorAgent = DefaultTutorAgent
+func countObjectItems(value any) int {
+	switch items := value.(type) {
+	case []map[string]any:
+		return len(items)
+	case []any:
+		return len(items)
+	default:
+		return 0
+	}
+}

@@ -14,14 +14,16 @@ import (
 
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/agent"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/config"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/content"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/gateway"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/health"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/httpserver"
-	"github.com/sheepy-yang/CampusClaw_Group/api/internal/mcpclient"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/objectstore"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/queue"
-	"github.com/sheepy-yang/CampusClaw_Group/api/internal/retrieval"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/security"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/store"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/teaching"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/tutoring"
 )
 
 var errConfigInvalid = errors.New("configuration invalid")
@@ -56,22 +58,51 @@ func run(logger *slog.Logger) error {
 	llm := gateway.NewClient()
 	orch := agent.NewOrchestrator(llm)
 	pipeline := teaching.NewPipeline(teaching.PipelineDependencies{
-		Orchestrator:   orch,
-		ContentAgent:   &agent.DefaultContentAgent{LLM: llm},
-		VirtualStudent: &agent.DefaultVirtualStudentAgent{LLM: llm},
-		Verifier:       &agent.DefaultVerifierAgent{},
-		Model:          llm,
-		Retriever:      retrieval.StubRetriever{},
-		MCP:            mcpclient.NewHost(),
-		Queue:          queue.Shared(),
-		Audit:          security.NewAuditLogger(),
+		Queue: queue.Shared(),
 	})
+	contentService := content.NewService(content.ServiceOptions{
+		Repository: content.NewStoreRepository(store.Default),
+		Evidence:   content.NewSharedStoreEvidenceProvider(store.Default),
+		Skills:     content.NewStoreSkillGate(store.Default),
+		Producer:   agent.NewGatewayContentAgent(llm),
+		Reviewer:   agent.NewDeterministicQualityAgent(),
+		IDGenerator: func(prefix string) string {
+			return store.NewID(prefix)
+		},
+	})
+	contentHandler := content.NewHandler(contentService, nil)
+	tutoringRepository := tutoring.NewRepository(store.Default)
+	tutoringModel := tutoring.OrchestratorModel{Orchestrator: orch}
+	tutoringService := tutoring.NewService(tutoring.ServiceDependencies{
+		Repository: tutoringRepository, ReviewModel: tutoringModel,
+		TutorModel: tutoringModel, ClusterModel: tutoringModel,
+		Audit: security.NewAuditLogger(),
+	})
+	tutoringMCP, err := tutoring.NewHTTPMCPHost(cfg.MCPURL, cfg.MCPToken, nil, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("%w: tutoring MCP: %v", errConfigInvalid, err)
+	}
+	tutoringDependencies := &httpserver.TutoringDependencies{
+		Service: tutoringService,
+		Tools: tutoring.NewTeachingTools(
+			tutoringMCP,
+			tutoring.StoreToolDataSource{Memory: store.Default},
+			security.NewAuditLogger(),
+		),
+	}
+	attachmentStore, err := objectstore.NewFromEnv()
+	if err != nil {
+		return fmt.Errorf("%w: object store: %v", errConfigInvalid, err)
+	}
 
 	handler := httpserver.NewMux(httpserver.Dependencies{
 		Logger:           logger,
 		HealthTimeout:    cfg.HealthTimeout,
 		HealthChecks:     checkers,
 		TeachingPipeline: pipeline,
+		ContentHandler:   contentHandler,
+		Tutoring:         tutoringDependencies,
+		ObjectStore:      attachmentStore,
 	})
 	server := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.HTTPPort),

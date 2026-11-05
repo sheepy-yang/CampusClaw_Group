@@ -1,0 +1,2128 @@
+openapi: 3.0.3
+info:
+  title: CampusClaw Group API
+  version: 1.0.0
+  description: API actually registered on the main Go HTTP mux.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+tags:
+  - { name: Auth }
+  - { name: Materials }
+  - { name: Assistant }
+  - { name: Assignments }
+  - { name: Content }
+  - { name: Skills }
+  - { name: Tutoring }
+  - { name: Classroom }
+  - { name: Tasks }
+  - { name: Attachments }
+  - { name: MCP }
+  - { name: Audit }
+paths:
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Create an expiring session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current session
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties: { ok: { type: string, enum: ["true"] } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the authenticated principal
+      responses:
+        "200":
+          description: Current principal
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Principal" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/classes/{classID}/materials:
+    parameters:
+      - $ref: "#/components/parameters/ClassID"
+    get:
+      tags: [Materials]
+      summary: List materials in the current class
+      responses:
+        "200":
+          description: Material summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Material" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Materials]
+      summary: Ingest and index text material (teacher)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMaterialRequest" }
+      responses:
+        "201":
+          description: Indexed material
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/materials/{materialID}:
+    parameters:
+      - $ref: "#/components/parameters/MaterialID"
+    get:
+      tags: [Materials]
+      summary: Get one class-scoped material
+      responses:
+        "200":
+          description: Material
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/materials/{materialID}/chunks:
+    parameters:
+      - $ref: "#/components/parameters/MaterialID"
+    get:
+      tags: [Materials]
+      summary: Get immutable chunks for a material
+      responses:
+        "200":
+          description: Material chunks
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [materialId, version, chunks]
+                properties:
+                  materialId: { type: string }
+                  version: { type: string }
+                  chunks:
+                    type: array
+                    items: { $ref: "#/components/schemas/Chunk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/classes/{classID}/search:
+    parameters:
+      - $ref: "#/components/parameters/ClassID"
+    post:
+      tags: [Materials]
+      summary: Search class-scoped material chunks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [query]
+              properties:
+                query: { type: string, maxLength: 500 }
+                limit: { type: integer, minimum: 1, maximum: 20, default: 5 }
+      responses:
+        "200":
+          description: Retrieval hits
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [retrievalRunId, hits]
+                properties:
+                  retrievalRunId: { type: string }
+                  hits:
+                    type: array
+                    items: { $ref: "#/components/schemas/Chunk" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /api/v1/classes/{classID}/assistant:
+    parameters:
+      - $ref: "#/components/parameters/ClassID"
+    get:
+      tags: [Assistant]
+      summary: Get class assistant configuration
+      responses:
+        "200":
+          description: Assistant configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Assistant" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Assistant]
+      summary: Update class assistant configuration (teacher)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateAssistantRequest" }
+      responses:
+        "200":
+          description: Saved assistant configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Assistant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/conversations:
+    get:
+      tags: [Assistant]
+      summary: List own conversations, or all class conversations for a teacher
+      parameters:
+        - name: all
+          in: query
+          description: Teachers may pass true to list all class conversations.
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Conversation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/classes/{classID}/conversations:
+    parameters:
+      - $ref: "#/components/parameters/ClassID"
+    post:
+      tags: [Assistant]
+      summary: Create a conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                title: { type: string, maxLength: 120 }
+      responses:
+        "201":
+          description: Conversation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/conversations/{conversationID}:
+    parameters:
+      - $ref: "#/components/parameters/ConversationID"
+    get:
+      tags: [Assistant]
+      summary: Get an authorized conversation
+      responses:
+        "200":
+          description: Conversation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/conversations/{conversationID}/messages:
+    parameters:
+      - $ref: "#/components/parameters/ConversationID"
+    post:
+      tags: [Assistant]
+      summary: Persist a grounded answer and stream SSE events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [content]
+              properties:
+                content: { type: string, maxLength: 4000 }
+                toolName: { type: string }
+                toolArgs:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: metadata, citations, optional tool, delta and done events
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /api/v1/classes/{classID}/assignments:
+    parameters:
+      - $ref: "#/components/parameters/ClassID"
+    get:
+      tags: [Assignments]
+      summary: List class assignments; students see published assignments without answers
+      responses:
+        "200":
+          description: Assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Assignment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Assignments]
+      summary: Create a draft assignment (teacher)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAssignmentRequest" }
+      responses:
+        "201":
+          description: Draft assignment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Assignment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/assignments/{assignmentID}:
+    parameters:
+      - $ref: "#/components/parameters/AssignmentID"
+    get:
+      tags: [Assignments]
+      summary: Get one assignment; student responses omit answers
+      responses:
+        "200":
+          description: Assignment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Assignment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/assignments/{assignmentID}/publish:
+    parameters:
+      - $ref: "#/components/parameters/AssignmentID"
+    post:
+      tags: [Assignments]
+      summary: Publish a valid draft assignment (teacher)
+      responses:
+        "200":
+          description: Published assignment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Assignment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/assignments/{assignmentID}/submissions:
+    parameters:
+      - $ref: "#/components/parameters/AssignmentID"
+      - $ref: "#/components/parameters/IdempotencyKey"
+    post:
+      tags: [Assignments]
+      summary: Save a student submission and enqueue grading
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignmentSubmissionRequest" }
+      responses:
+        "202":
+          description: Submission accepted or idempotently replayed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskAccepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/submissions/{submissionID}:
+    parameters:
+      - $ref: "#/components/parameters/SubmissionID"
+    get:
+      tags: [Assignments]
+      summary: Get an authorized platform submission
+      responses:
+        "200":
+          description: Submission
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Submission" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/submissions/{submissionID}/score:
+    parameters:
+      - $ref: "#/components/parameters/SubmissionID"
+    post:
+      tags: [Assignments]
+      summary: Override a platform submission score (teacher)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [score, note]
+              properties:
+                score: { type: number, minimum: 0 }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: Updated submission
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Submission" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/submissions/{submissionID}/mistake-explanation:
+    parameters:
+      - $ref: "#/components/parameters/SubmissionID"
+    get:
+      tags: [Assignments]
+      summary: Get answer-safe mistake guidance
+      responses:
+        "200":
+          description: Mistake guidance
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MistakeExplanation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/tasks/{taskID}:
+    parameters:
+      - $ref: "#/components/parameters/TaskID"
+    get:
+      tags: [Tasks]
+      summary: Poll an authorized task
+      responses:
+        "200":
+          description: Task state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/tasks/{taskID}/retry:
+    parameters:
+      - $ref: "#/components/parameters/TaskID"
+    post:
+      tags: [Tasks]
+      summary: Requeue a failed assignment-grade or virtual-classroom task
+      responses:
+        "202":
+          description: Retry accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /api/v1/attachments:
+    post:
+      tags: [Attachments]
+      summary: Upload exactly one JPEG, PNG or WebP answer image
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Stored attachment metadata; object key is not exposed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachmentReceipt" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413":
+          description: File exceeds 10 MiB
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /api/v1/skills/preview-sheet:
+    post:
+      tags: [Skills]
+      summary: Generate grounded course preview cards
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CourseCardsRequest" }
+      responses: { "200": { $ref: "#/components/responses/GenerationResult" }, "201": { $ref: "#/components/responses/GenerationResult" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "502": { $ref: "#/components/responses/BadGateway" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/proposition:
+    post:
+      tags: [Skills]
+      summary: Generate grounded exercises
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExercisesRequest" }
+      responses: { "200": { $ref: "#/components/responses/GenerationResult" }, "201": { $ref: "#/components/responses/GenerationResult" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "502": { $ref: "#/components/responses/BadGateway" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/lesson-plan:
+    post:
+      tags: [Skills]
+      summary: Generate a grounded lesson plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LessonPlanRequest" }
+      responses: { "200": { $ref: "#/components/responses/GenerationResult" }, "201": { $ref: "#/components/responses/GenerationResult" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "502": { $ref: "#/components/responses/BadGateway" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/content-quality-review:
+    post:
+      tags: [Skills]
+      summary: Review generated or supplied content quality
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QualityReviewRequest" }
+      responses: { "200": { $ref: "#/components/responses/QualityReviewResult" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "502": { $ref: "#/components/responses/BadGateway" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/content-production/course-cards:
+    post:
+      tags: [Content]
+      summary: Dedicated alias for preview-card generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CourseCardsRequest" }
+      responses: { "200": { $ref: "#/components/responses/GenerationResult" }, "201": { $ref: "#/components/responses/GenerationResult" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "502": { $ref: "#/components/responses/BadGateway" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/content-production/exercises:
+    post:
+      tags: [Content]
+      summary: Dedicated alias for exercise generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExercisesRequest" }
+      responses: { "200": { $ref: "#/components/responses/GenerationResult" }, "201": { $ref: "#/components/responses/GenerationResult" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "502": { $ref: "#/components/responses/BadGateway" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/content-production/lesson-plans:
+    post:
+      tags: [Content]
+      summary: Dedicated alias for lesson-plan generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LessonPlanRequest" }
+      responses: { "200": { $ref: "#/components/responses/GenerationResult" }, "201": { $ref: "#/components/responses/GenerationResult" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "502": { $ref: "#/components/responses/BadGateway" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/content-production/reviews:
+    post:
+      tags: [Content]
+      summary: Dedicated alias for content quality review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QualityReviewRequest" }
+      responses: { "200": { $ref: "#/components/responses/QualityReviewResult" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "502": { $ref: "#/components/responses/BadGateway" }, "503": { $ref: "#/components/responses/Unavailable" } }
+
+  /api/v1/skills/virtual-classroom:
+    post:
+      tags: [Skills]
+      summary: Queue a synthetic-role classroom rehearsal (teacher)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [lessonPlanId, rounds]
+              properties:
+                lessonPlanId: { type: string }
+                objective: { type: string }
+                rounds: { type: integer, minimum: 1, maximum: 10 }
+                previousSimulationId: { type: string }
+      responses:
+        "202":
+          description: Simulation task accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /api/v1/skills/multimodal-grade:
+    get:
+      tags: [Skills]
+      summary: List multimodal submissions (teacher)
+      parameters:
+        - name: assignmentId
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Submissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Submission" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Skills]
+      summary: Queue multimodal subjective grading (student)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [assignmentId]
+              properties:
+                assignmentId: { type: string }
+                answerText: { type: string }
+                imageDigest: { type: string, pattern: "^sha256:[0-9a-f]{64}$" }
+      responses:
+        "202":
+          description: Grading queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/skills/multimodal-grade/objective:
+    post:
+      tags: [Skills]
+      summary: Grade one objective item from the trusted answer source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [assignmentId, questionId, studentAnswer]
+              properties:
+                assignmentId: { type: string }
+                questionId: { type: string }
+                studentAnswer: { type: string }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "415": { $ref: "#/components/responses/UnsupportedMediaType" } }
+  /api/v1/skills/multimodal-grade/confirm-transcription:
+    post:
+      tags: [Skills]
+      summary: Confirm OCR transcription before grading (student)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [submissionId, text]
+              properties:
+                submissionId: { type: string }
+                text: { type: string }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "415": { $ref: "#/components/responses/UnsupportedMediaType" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/multimodal-grade/override:
+    post:
+      tags: [Skills]
+      summary: Override a multimodal grade result (teacher)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [resultId, score, note]
+              properties:
+                resultId: { type: string }
+                score: { type: number, minimum: 0 }
+                note: { type: string }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "415": { $ref: "#/components/responses/UnsupportedMediaType" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/multimodal-grade/{submissionID}:
+    parameters:
+      - $ref: "#/components/parameters/SubmissionID"
+    get:
+      tags: [Skills]
+      summary: Get an authorized multimodal submission
+      responses:
+        "200":
+          description: Submission
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Submission" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/skills/multimodal-grade/{submissionID}/retry:
+    parameters:
+      - $ref: "#/components/parameters/SubmissionID"
+    post:
+      tags: [Skills]
+      summary: Retry multimodal grading for an authorized submission
+      responses: { "202": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "503": { $ref: "#/components/responses/Unavailable" } }
+
+  /api/v1/skills/class-review:
+    post:
+      tags: [Skills]
+      summary: Generate a class review from assignment evidence (teacher)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [assignmentId]
+              properties: { assignmentId: { type: string } }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "415": { $ref: "#/components/responses/UnsupportedMediaType" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/diagnosis:
+    post:
+      tags: [Skills]
+      summary: Generate a student diagnosis from real evidence (teacher)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [studentId]
+              properties: { studentId: { type: string } }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "415": { $ref: "#/components/responses/UnsupportedMediaType" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/diagnosis/{contentID}/release:
+    parameters:
+      - $ref: "#/components/parameters/ContentID"
+    post:
+      tags: [Skills]
+      summary: Release a diagnosis to its student (teacher)
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/answer-replay/snapshot:
+    post:
+      tags: [Skills]
+      summary: Save a manual or interval answer snapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [attemptId, content]
+              properties:
+                attemptId: { type: string }
+                content: { type: string }
+                trigger: { type: string, enum: [manual, interval], default: manual }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "415": { $ref: "#/components/responses/UnsupportedMediaType" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/answer-replay/meta:
+    post:
+      tags: [Skills]
+      summary: Attach citations and AI-usage disclosure to an attempt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [attemptId]
+              properties:
+                attemptId: { type: string }
+                citations:
+                  type: array
+                  items: { type: string }
+                aiUsageNote: { type: string }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "415": { $ref: "#/components/responses/UnsupportedMediaType" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/answer-replay/{attemptID}/timeline:
+    parameters:
+      - $ref: "#/components/parameters/AttemptID"
+    get:
+      tags: [Skills]
+      summary: Get an authorized answer-replay timeline
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/answer-replay/{attemptID}/similarity:
+    parameters:
+      - $ref: "#/components/parameters/AttemptID"
+    get:
+      tags: [Skills]
+      summary: Get similarity evidence without an automated verdict (teacher)
+      responses:
+        "200":
+          description: Similarity evidence
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimilarityReport" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /api/v1/contents/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ContentPathID"
+    get:
+      tags: [Content]
+      summary: Get authorized generated content
+      responses:
+        "200":
+          description: Content record
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ProductionContent"
+                  - $ref: "#/components/schemas/SharedContent"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/contents/{id}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/ContentPathID"
+    post:
+      tags: [Content]
+      summary: Confirm generated content (teacher)
+      requestBody:
+        description: Production content accepts an optional payload; shared lifecycle content accepts only an empty object.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConfirmContentRequest" }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/Unprocessable" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/contents/{id}/publish:
+    parameters:
+      - $ref: "#/components/parameters/ContentPathID"
+    post:
+      tags: [Content]
+      summary: Publish and freeze confirmed content (teacher)
+      parameters:
+        - $ref: "#/components/parameters/OptionalIdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: { idempotencyKey: { type: string } }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/Unprocessable" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/contents/{id}/reject:
+    parameters:
+      - $ref: "#/components/parameters/ContentPathID"
+    post:
+      tags: [Content]
+      summary: Reject pending or confirmed shared-lifecycle content (teacher)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties: { reason: { type: string, maxLength: 1000 } }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "415": { $ref: "#/components/responses/UnsupportedMediaType" } }
+  /api/v1/classes/{classID}/contents:
+    parameters:
+      - $ref: "#/components/parameters/ClassID"
+      - name: skill
+        in: query
+        required: true
+        schema: { $ref: "#/components/schemas/SkillID" }
+    get:
+      tags: [Content]
+      summary: List class content for one skill
+      responses:
+        "200":
+          description: Content records
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GenericObject" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/classes/{classID}/skills:
+    parameters:
+      - $ref: "#/components/parameters/ClassID"
+    get:
+      tags: [Skills]
+      summary: Get all twelve class skill gates
+      responses:
+        "200":
+          description: Skill enablement map
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SkillMap" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Skills]
+      summary: Partially update the twelve class skill gates (teacher)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SkillMap" }
+      responses:
+        "200":
+          description: Updated skill enablement map
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SkillMap" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+
+  /api/v1/learning/state:
+    get:
+      tags: [Tutoring]
+      summary: Get the current student's 14-day learning state
+      responses:
+        "200":
+          description: Learning state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/skills/review-path:
+    post:
+      tags: [Tutoring]
+      summary: Generate a 3-5 step path from real student evidence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        "200":
+          description: Review path or explicit insufficient-evidence result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewPathResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/review-paths/latest:
+    get:
+      tags: [Tutoring]
+      summary: Get the latest review path
+      parameters:
+        - name: studentId
+          in: query
+          description: Teacher-only cross-student lookup; students remain self-scoped.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Latest plan wrapper
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { plan: { $ref: "#/components/schemas/ReviewPlan" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/review-paths/{planID}:
+    parameters:
+      - $ref: "#/components/parameters/PlanID"
+    get:
+      tags: [Tutoring]
+      summary: Get an authorized review plan
+      responses:
+        "200":
+          description: Review plan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewPlan" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/review-paths/{planID}/steps/{stepID}/complete:
+    parameters:
+      - $ref: "#/components/parameters/PlanID"
+      - $ref: "#/components/parameters/StepID"
+    post:
+      tags: [Tutoring]
+      summary: Complete one review-plan step
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        "200":
+          description: Updated review plan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewPlan" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /api/v1/skills/socratic-tutor/start:
+    post:
+      tags: [Tutoring]
+      summary: Start an answer-safe Socratic session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [questionId]
+              properties: { questionId: { type: string } }
+      responses:
+        "201":
+          description: Tutoring session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TutorSession" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/skills/socratic-tutor:
+    post:
+      tags: [Tutoring]
+      summary: Continue an owned Socratic session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sessionId, reply]
+              properties:
+                sessionId: { type: string }
+                reply: { type: string }
+      responses:
+        "200":
+          description: Updated tutoring session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TutorSession" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/tutoring/sessions/{sessionID}:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    get:
+      tags: [Tutoring]
+      summary: Get an authorized Socratic session
+      responses:
+        "200":
+          description: Tutoring session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TutorSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /api/v1/skills/adaptive-practice:
+    post:
+      tags: [Tutoring]
+      summary: Start non-graded adaptive practice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StartPracticeRequest" }
+      responses: { "201": { $ref: "#/components/responses/PracticeSession" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/adaptive-practice/start:
+    post:
+      tags: [Tutoring]
+      summary: Alias for starting non-graded adaptive practice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StartPracticeRequest" }
+      responses: { "201": { $ref: "#/components/responses/PracticeSession" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/adaptive-practice/submit:
+    post:
+      tags: [Tutoring]
+      summary: Submit a practice answer and receive a state transition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sessionId, submissionId, answerText]
+              properties:
+                sessionId: { type: string }
+                submissionId: { type: string }
+                answerText: { type: string }
+      responses:
+        "200":
+          description: Practice transition
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PracticeResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/skills/adaptive-practice/hint:
+    post:
+      tags: [Tutoring]
+      summary: Request a hint for an active practice session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionRequest" }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/adaptive-practice/quit:
+    post:
+      tags: [Tutoring]
+      summary: Quit practice and receive a final report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sessionId, submissionId]
+              properties:
+                sessionId: { type: string }
+                submissionId: { type: string }
+      responses:
+        "200":
+          description: Final practice result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PracticeResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/practice/sessions/{sessionID}:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    get:
+      tags: [Tutoring]
+      summary: Get an authorized practice session
+      responses:
+        "200":
+          description: Practice session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PracticeSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /api/v1/classroom/interactions:
+    post:
+      tags: [Classroom]
+      summary: Open a class-scoped interaction (teacher)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [prompt]
+              properties: { prompt: { type: string } }
+      responses:
+        "201":
+          description: Classroom interaction
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClassroomInteraction" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/classroom/interactions/active:
+    get:
+      tags: [Classroom]
+      summary: Get the active class interaction
+      responses:
+        "200":
+          description: Active interaction wrapper
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { interaction: { $ref: "#/components/schemas/ClassroomInteraction" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/classroom/interactions/{sessionID}/close:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    post:
+      tags: [Classroom]
+      summary: Close a classroom interaction (teacher)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        "200":
+          description: Closed interaction
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClassroomInteraction" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/classroom/interactions/{sessionID}/analysis:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    get:
+      tags: [Classroom]
+      summary: Get classroom cluster analysis
+      responses:
+        "200":
+          description: Classroom analysis
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClassroomAnalysis" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/skills/classroom-cluster/answer:
+    post:
+      tags: [Classroom]
+      summary: Submit or replace an anonymous classroom answer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sessionId, text]
+              properties:
+                sessionId: { type: string }
+                text: { type: string }
+      responses: { "200": { $ref: "#/components/responses/GenericSuccess" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "503": { $ref: "#/components/responses/Unavailable" } }
+  /api/v1/skills/classroom-cluster:
+    post:
+      tags: [Classroom]
+      summary: Cluster anonymous answers; fewer than five skips the model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionRequest" }
+      responses:
+        "200":
+          description: Cluster analysis or threshold result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClassroomAnalysis" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /api/v1/mcp/tools:
+    get:
+      tags: [MCP]
+      summary: Discover role-filtered MCP tools
+      responses:
+        "200":
+          description: Tool descriptors
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tools]
+                properties:
+                  tools:
+                    type: array
+                    items: { $ref: "#/components/schemas/MCPTool" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/v1/mcp/tools/{tool}/call:
+    parameters:
+      - name: tool
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [formula_verify, assignment_stats, student_mistakes]
+    post:
+      tags: [MCP]
+      summary: Call an allowed MCP tool with server-scoped arguments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [arguments]
+              properties:
+                arguments:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Tool result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MCPToolResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /api/v1/audit:
+    get:
+      tags: [Audit]
+      summary: List current-class audit events (teacher)
+      responses:
+        "200":
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditEvent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  parameters:
+    ClassID: { name: classID, in: path, required: true, schema: { type: string } }
+    MaterialID: { name: materialID, in: path, required: true, schema: { type: string } }
+    ConversationID: { name: conversationID, in: path, required: true, schema: { type: string } }
+    AssignmentID: { name: assignmentID, in: path, required: true, schema: { type: string } }
+    SubmissionID: { name: submissionID, in: path, required: true, schema: { type: string } }
+    TaskID: { name: taskID, in: path, required: true, schema: { type: string } }
+    ContentID: { name: contentID, in: path, required: true, schema: { type: string } }
+    ContentPathID: { name: id, in: path, required: true, schema: { type: string } }
+    AttemptID: { name: attemptID, in: path, required: true, schema: { type: string } }
+    PlanID: { name: planID, in: path, required: true, schema: { type: string } }
+    StepID: { name: stepID, in: path, required: true, schema: { type: string } }
+    SessionID: { name: sessionID, in: path, required: true, schema: { type: string } }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$" }
+    OptionalIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, maxLength: 128 }
+  schemas:
+    GenericObject:
+      type: object
+      additionalProperties: true
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        request_id: { type: string }
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password }
+    LoginResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token: { type: string }
+        user: { $ref: "#/components/schemas/Principal" }
+    Principal:
+      type: object
+      required: [userId, classId, role, name]
+      properties:
+        userId: { type: string }
+        classId: { type: string }
+        role: { type: string, enum: [teacher, student] }
+        name: { type: string }
+    CreateMaterialRequest:
+      type: object
+      additionalProperties: false
+      required: [title, content]
+      properties:
+        title: { type: string, maxLength: 120 }
+        content: { type: string, maxLength: 100000 }
+    Material:
+      type: object
+      required: [id, classId, title, version, contentHash, indexStatus, createdBy, createdAt]
+      properties:
+        id: { type: string }
+        classId: { type: string }
+        title: { type: string }
+        content: { type: string }
+        version: { type: string }
+        contentHash: { type: string }
+        indexStatus: { type: string, enum: [indexing, ready, failed] }
+        embeddingModel: { type: string }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        chunks:
+          type: array
+          items: { $ref: "#/components/schemas/Chunk" }
+    Chunk:
+      type: object
+      required: [id, materialId, materialVersion, index, characterStart, characterEnd, contentHash, text, source]
+      properties:
+        id: { type: string }
+        materialId: { type: string }
+        materialVersion: { type: string }
+        index: { type: integer }
+        characterStart: { type: integer }
+        characterEnd: { type: integer }
+        contentHash: { type: string }
+        text: { type: string }
+        source: { type: string }
+        keywordScore: { type: number }
+        vectorScore: { type: number }
+        fusionScore: { type: number }
+    UpdateAssistantRequest:
+      type: object
+      additionalProperties: false
+      required: [name, systemPrompt, enabledSkills]
+      properties:
+        name: { type: string, maxLength: 80 }
+        systemPrompt: { type: string, maxLength: 4000 }
+        enabledSkills:
+          type: array
+          items: { type: string, enum: [rag_search, mistake_hint, formula_verify] }
+    Assistant:
+      type: object
+      required: [id, classId, name, systemPrompt, enabledSkills, updatedBy, updatedAt]
+      properties:
+        id: { type: string }
+        classId: { type: string }
+        name: { type: string }
+        systemPrompt: { type: string }
+        enabledSkills:
+          type: array
+          items: { type: string }
+        updatedBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+    ConversationMessage:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id: { type: string }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+        citations:
+          type: array
+          items: { $ref: "#/components/schemas/Chunk" }
+        tool: { type: string }
+        createdAt: { type: string, format: date-time }
+    Conversation:
+      type: object
+      required: [id, classId, userId, assistantId, title, messages, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        classId: { type: string }
+        userId: { type: string }
+        assistantId: { type: string }
+        title: { type: string }
+        messages:
+          type: array
+          items: { $ref: "#/components/schemas/ConversationMessage" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Question:
+      type: object
+      required: [stem, answer]
+      properties:
+        id: { type: string }
+        stem: { type: string }
+        type: { type: string }
+        knowledgePoint: { type: string, maxLength: 100 }
+        difficulty: { type: string }
+        answer: { type: string, writeOnly: true }
+        explanation: { type: string, writeOnly: true }
+        citations:
+          type: array
+          items: { $ref: "#/components/schemas/GenericObject" }
+        status: { type: string, enum: [draft, validated, reviewing, published, archived] }
+        adopted: { type: boolean }
+    CreateAssignmentRequest:
+      type: object
+      additionalProperties: false
+      required: [title, items]
+      properties:
+        title: { type: string, maxLength: 160 }
+        description: { type: string }
+        maxScore: { type: number, minimum: 0, maximum: 10000, default: 10 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/Question" }
+    Assignment:
+      type: object
+      required: [id, classId, title, status, maxScore, items, createdBy, createdAt]
+      properties:
+        id: { type: string }
+        classId: { type: string }
+        title: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [draft, published] }
+        maxScore: { type: number }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Question" }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        publishedAt: { type: string, format: date-time }
+    AssignmentSubmissionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        answerText: { type: string }
+        answers:
+          type: object
+          additionalProperties: { type: string, maxLength: 20000 }
+    TaskAccepted:
+      type: object
+      required: [taskId, submissionId, status, duplicate]
+      properties:
+        taskId: { type: string }
+        submissionId: { type: string }
+        status: { $ref: "#/components/schemas/TaskStatus" }
+        duplicate: { type: boolean }
+    TaskStatus:
+      type: string
+      description: Union of task states emitted by platform, evaluation, and teaching pipelines.
+      enum: [pending, queued, running, pending_confirmation, succeeded, failed, not_started, step_running, step_finished]
+    TaskStepStatus:
+      type: string
+      enum: [pending, queued, running, succeeded, failed, done, intercepted, not_started, step_running, step_finished]
+    Task:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string }
+        skill: { type: string }
+        classId: { type: string }
+        userId: { type: string }
+        objectId: { type: string }
+        status: { $ref: "#/components/schemas/TaskStatus" }
+        error: { type: string }
+        idempotencyKey: { type: string }
+        payloadHash: { type: string }
+        traceId: { type: string }
+        steps:
+          type: array
+          items:
+            type: object
+            required: [name, status]
+            properties:
+              name: { type: string }
+              status: { $ref: "#/components/schemas/TaskStepStatus" }
+              attempt: { type: integer }
+              errorCode: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Submission:
+      type: object
+      required: [id, assignmentId, studentId, classId, status]
+      properties:
+        id: { type: string }
+        assignmentId: { type: string }
+        studentId: { type: string }
+        classId: { type: string }
+        answerText: { type: string }
+        answers: { type: object, additionalProperties: { type: string } }
+        transcription: { type: string }
+        transcriptionConfirmed: { type: boolean }
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/GenericObject" }
+        score: { type: number }
+        suggestedScore: { type: number }
+        maxScore: { type: number }
+        firstErrorStep: { type: string }
+        errorCause: { type: string }
+        confidence: { type: number }
+        needsReview: { type: boolean }
+        teacherNote: { type: string }
+        scoreHistory:
+          type: array
+          items: { $ref: "#/components/schemas/GenericObject" }
+        status:
+          type: string
+          enum: [submitted, queued, ocr_processing, awaiting_transcription_confirm, grading, needs_teacher_review, graded_suggested, teacher_final, failed_submission_kept, drafting, failed, graded]
+        snapshots:
+          type: array
+          items: { $ref: "#/components/schemas/AnswerSnapshot" }
+        aiUsageNote: { type: string }
+        citations: { type: array, items: { type: string } }
+        imageDigest: { type: string }
+        objectiveOnly: { type: boolean }
+        modelFailed: { type: boolean }
+        studentVisibleDiag: { type: boolean }
+        taskId: { type: string }
+        idempotencyKey: { type: string }
+        submittedAt: { type: string, format: date-time }
+    AnswerSnapshot:
+      type: object
+      required: [version, content, createdAt, trigger]
+      properties:
+        version: { type: integer }
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
+        trigger: { type: string, enum: [interval, manual] }
+    MistakeExplanation:
+      type: object
+      required: [mistakeId, questionStem, errorCause, hint, answerRevealed]
+      properties:
+        mistakeId: { type: string }
+        questionStem: { type: string }
+        errorCause: { type: string }
+        hint: { type: string }
+        answerRevealed: { type: boolean, enum: [false] }
+    AttachmentReceipt:
+      type: object
+      required: [digest, contentType, size]
+      properties:
+        digest: { type: string, pattern: "^sha256:[0-9a-f]{64}$" }
+        contentType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+        size: { type: integer, format: int64, maximum: 10485760 }
+    EvidenceRef:
+      type: object
+      additionalProperties: false
+      required: [materialId]
+      properties:
+        materialId: { type: string }
+        chunkId: { type: string }
+    CourseCardsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        topic: { type: string }
+        count: { type: integer }
+        cardCount: { type: integer }
+        materialId: { type: string }
+        sourceRefs: { type: array, items: { $ref: "#/components/schemas/EvidenceRef" } }
+        idempotencyKey: { type: string }
+    ExercisesRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        topic: { type: string }
+        count: { type: integer }
+        questionCount: { type: integer }
+        exerciseTypes: { type: array, items: { type: string } }
+        questionTypes: { type: array, items: { type: string } }
+        difficulty: { type: string }
+        materialId: { type: string }
+        sourceRefs: { type: array, items: { $ref: "#/components/schemas/EvidenceRef" } }
+        idempotencyKey: { type: string }
+    LessonPlanRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        topic: { type: string }
+        durationMinutes: { type: integer }
+        objectives: { type: array, items: { type: string } }
+        materialId: { type: string }
+        sourceRefs: { type: array, items: { $ref: "#/components/schemas/EvidenceRef" } }
+        idempotencyKey: { type: string }
+    QualityReviewRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        contentId: { type: string }
+        kind: { type: string }
+        payload: { type: object, additionalProperties: true }
+        materialId: { type: string }
+        sourceRefs: { type: array, items: { $ref: "#/components/schemas/EvidenceRef" } }
+    ProductionContentStatus:
+      type: string
+      enum: [pending_confirmation, needs_revision, confirmed, published]
+    GenerationResult:
+      type: object
+      required: [contentId, status, kind, version, replayed, content]
+      properties:
+        contentId: { type: string }
+        status: { $ref: "#/components/schemas/ProductionContentStatus" }
+        kind: { type: string }
+        version: { type: integer }
+        replayed: { type: boolean }
+        content: { $ref: "#/components/schemas/ProductionContent" }
+    ProductionContent:
+      type: object
+      required: [id, classId, createdBy, kind, status, version, revision, payload, citations, lastReview, usage, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        classId: { type: string }
+        createdBy: { type: string }
+        kind: { type: string }
+        status: { $ref: "#/components/schemas/ProductionContentStatus" }
+        version: { type: integer }
+        revision: { type: integer }
+        payload: { type: object, additionalProperties: true }
+        citations: { type: array, items: { $ref: "#/components/schemas/GenericObject" } }
+        lastReview: { $ref: "#/components/schemas/GenericObject" }
+        usage: { $ref: "#/components/schemas/GenericObject" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        confirmedBy: { type: string }
+        confirmedAt: { type: string, format: date-time }
+        publishedBy: { type: string }
+        publishedAt: { type: string, format: date-time }
+        frozenDigest: { type: string }
+    SharedContent:
+      type: object
+      required: [id, skill, classId, status, payload, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        skill: { $ref: "#/components/schemas/SkillID" }
+        classId: { type: string }
+        status: { type: string, enum: [generating, queued, pending, confirmed, rejected, published] }
+        payload: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ConfirmContentRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        payload: { type: object, additionalProperties: true }
+    SkillID:
+      type: string
+      enum: [proposition, lesson_plan, preview_sheet, virtual_classroom, multimodal_grade, class_review, diagnosis, answer_replay, review_path, socratic_tutor, classroom_cluster, adaptive_practice]
+    SkillMap:
+      type: object
+      additionalProperties: false
+      properties:
+        proposition: { type: boolean }
+        lesson_plan: { type: boolean }
+        preview_sheet: { type: boolean }
+        virtual_classroom: { type: boolean }
+        multimodal_grade: { type: boolean }
+        class_review: { type: boolean }
+        diagnosis: { type: boolean }
+        answer_replay: { type: boolean }
+        review_path: { type: boolean }
+        socratic_tutor: { type: boolean }
+        classroom_cluster: { type: boolean }
+        adaptive_practice: { type: boolean }
+    SimilarityReport:
+      type: object
+      required: [attemptId, evidence, note, verdict]
+      properties:
+        attemptId: { type: string }
+        evidence:
+          type: array
+          items:
+            type: object
+            required: [fragment, source, similarity, location]
+            properties:
+              fragment: { type: string }
+              source: { type: string }
+              similarity: { type: number }
+              location: { type: string }
+        note: { type: string }
+        verdict:
+          description: Always null; the server does not make an automated misconduct verdict.
+          nullable: true
+    LearningState:
+      type: object
+      required: [studentId, classId, windowDays, knowledgePoints]
+      properties:
+        studentId: { type: string }
+        classId: { type: string }
+        windowDays: { type: integer, enum: [14] }
+        knowledgePoints:
+          type: array
+          items:
+            type: object
+            required: [knowledgePoint, eventCount, evidenceCount, correctCount, incorrectCount, understoodCount, successRate, masteryLevel]
+            properties:
+              knowledgePoint: { type: string }
+              eventCount: { type: integer }
+              evidenceCount: { type: integer }
+              correctCount: { type: integer }
+              incorrectCount: { type: integer }
+              understoodCount: { type: integer }
+              successRate: { type: number }
+              masteryLevel: { type: string, enum: [weak, developing, solid, insufficient_data] }
+    ReviewStep:
+      type: object
+      required: [id, order, type, title, knowledgePoint, completed]
+      properties:
+        id: { type: string }
+        order: { type: integer }
+        type: { type: string }
+        title: { type: string }
+        detail: { type: string }
+        knowledgePoint: { type: string }
+        completed: { type: boolean }
+        completedAt: { type: string, format: date-time }
+    ReviewPlan:
+      type: object
+      required: [id, studentId, classId, status, steps, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        studentId: { type: string }
+        classId: { type: string }
+        status: { type: string }
+        steps: { type: array, items: { $ref: "#/components/schemas/ReviewStep" } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ReviewPathResult:
+      type: object
+      required: [skipped]
+      properties:
+        skipped: { type: boolean }
+        reason: { type: string }
+        plan: { $ref: "#/components/schemas/ReviewPlan" }
+    TutorTurn:
+      type: object
+      required: [round, reply, hit, createdAt]
+      properties:
+        round: { type: integer }
+        reply: { type: string }
+        hit: { type: boolean }
+        prompt: { type: string }
+        createdAt: { type: string, format: date-time }
+    TutorSession:
+      type: object
+      required: [id, studentId, classId, questionId, questionStem, demo, round, hitStreak, maxRounds, answerReleased, history, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        studentId: { type: string }
+        classId: { type: string }
+        questionId: { type: string }
+        questionStem: { type: string }
+        demo: { type: boolean }
+        round: { type: integer }
+        hitStreak: { type: integer }
+        maxRounds: { type: integer }
+        answerReleased: { type: boolean }
+        releaseReason: { type: string }
+        fullSolution: { type: string }
+        prompt: { type: string }
+        history: { type: array, items: { $ref: "#/components/schemas/TutorTurn" } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    StartPracticeRequest:
+      type: object
+      additionalProperties: false
+      required: [knowledgePoint]
+      properties: { knowledgePoint: { type: string } }
+    SessionRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionId]
+      properties: { sessionId: { type: string } }
+    PublicQuestion:
+      type: object
+      required: [id, knowledgePoint, difficulty, stem, verified]
+      properties:
+        id: { type: string }
+        knowledgePoint: { type: string }
+        difficulty: { type: string }
+        stem: { type: string }
+        verified: { type: boolean }
+    PracticeReport:
+      type: object
+      required: [questionCount, correctCount, masteryEvidence, countsTowardGrade, finalKnowledgePoint]
+      properties:
+        questionCount: { type: integer }
+        correctCount: { type: integer }
+        masteryEvidence: { type: array, items: { type: string } }
+        countsTowardGrade: { type: boolean, enum: [false] }
+        finalKnowledgePoint: { type: string }
+    PracticeResult:
+      type: object
+      required: [submissionId, outcome, transition, finished]
+      properties:
+        submissionId: { type: string }
+        outcome: { type: string }
+        transition: { type: string }
+        finished: { type: boolean }
+        finishReason: { type: string }
+        question: { $ref: "#/components/schemas/PublicQuestion" }
+        summary: { $ref: "#/components/schemas/PracticeReport" }
+    PracticeSession:
+      type: object
+      required: [id, studentId, classId, knowledgePoint, difficulty, consecutiveCorrect, hardCorrect, questionCount, correctCount, hintsUsed, attempts, masteryEvidence, finished, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        studentId: { type: string }
+        classId: { type: string }
+        knowledgePoint: { type: string }
+        difficulty: { type: string }
+        consecutiveCorrect: { type: integer }
+        hardCorrect: { type: integer }
+        questionCount: { type: integer }
+        correctCount: { type: integer }
+        hintsUsed: { type: integer }
+        question: { $ref: "#/components/schemas/PublicQuestion" }
+        attempts:
+          type: array
+          items: { $ref: "#/components/schemas/GenericObject" }
+        masteryEvidence: { type: array, items: { type: string } }
+        finished: { type: boolean }
+        finishReason: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ClassroomInteraction:
+      type: object
+      required: [id, classId, teacherId, prompt, status, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        classId: { type: string }
+        teacherId: { type: string }
+        prompt: { type: string }
+        status: { type: string, enum: [open, closed] }
+        analysis: { $ref: "#/components/schemas/ClassroomAnalysis" }
+        createdAt: { type: string, format: date-time }
+        closedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ClassroomAnalysis:
+      type: object
+      required: [skipped, answerCount, anonymous, countsAsGrade]
+      properties:
+        skipped: { type: boolean }
+        reason: { type: string }
+        mode: { type: string }
+        answerCount: { type: integer }
+        anonymous: { type: boolean, enum: [true] }
+        countsAsGrade: { type: boolean, enum: [false] }
+        clusters:
+          type: array
+          items:
+            type: object
+            required: [id, memberIds, size, label, followUp]
+            properties:
+              id: { type: string }
+              memberIds: { type: array, items: { type: string } }
+              size: { type: integer }
+              label: { type: string }
+              followUp: { type: string }
+    MCPTool:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, enum: [formula_verify, assignment_stats, student_mistakes] }
+        description: { type: string }
+        inputSchema: { type: object, additionalProperties: true }
+    MCPToolResult:
+      type: object
+      required: [tool, requestId, data]
+      properties:
+        tool: { type: string }
+        requestId: { type: string }
+        data: { type: object, additionalProperties: true }
+    AuditEvent:
+      type: object
+      required: [id, actorId, classId, action, object, result, durationMs, requestId, createdAt]
+      properties:
+        id: { type: string }
+        actorId: { type: string }
+        classId: { type: string }
+        action: { type: string }
+        object: { type: string }
+        result: { type: string }
+        skill: { type: string }
+        usage: { type: integer }
+        durationMs: { type: integer, format: int64 }
+        requestId: { type: string }
+        detail: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+  responses:
+    GenericSuccess:
+      description: Successful operation
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/GenericObject" }
+    GenerationResult:
+      description: Generated content; 200 means an idempotent replay
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/GenerationResult" }
+    QualityReviewResult:
+      description: Quality review
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/GenericObject" }
+    PracticeSession:
+      description: Practice session with a verified public question
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PracticeSession" }
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing, invalid, expired or revoked session
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Authenticated but not permitted, or skill disabled
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Missing or out-of-scope resource
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: State, evidence or idempotency conflict
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnsupportedMediaType:
+      description: Unsupported or missing Content-Type
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: Content failed quality review
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadGateway:
+      description: Model, review or MCP output was invalid
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unavailable:
+      description: Required model, queue, storage, tutoring, MCP or persistence dependency unavailable
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

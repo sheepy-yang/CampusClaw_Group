@@ -60,7 +60,7 @@ case "$cmd" in
     curl -sf "http://127.0.0.1:${APP_PORT}/health" && echo
     curl -sf -X POST "http://127.0.0.1:${APP_PORT}/api/v1/auth/login" \
       -H 'Content-Type: application/json' \
-      -d '{"role":"teacher"}' && echo
+      -d '{"username":"teacher","password":"demo123"}' && echo
     echo "smoke ok"
     ;;
   *)

@@ -1,6 +1,7 @@
 package evaluation
 
 import (
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -13,7 +14,14 @@ func CompareFragments(answer string, sources map[string]string) []SimilarityItem
 		return nil
 	}
 	var hits []SimilarityItem
-	for srcName, srcText := range sources {
+	sourceNames := make([]string, 0, len(sources))
+	for sourceName := range sources {
+		sourceNames = append(sourceNames, sourceName)
+	}
+	sort.Strings(sourceNames)
+	seen := make(map[string]bool)
+	for _, srcName := range sourceNames {
+		srcText := sources[srcName]
 		frags := windowFragments(srcText, 8, 24)
 		for _, frag := range frags {
 			if utf8.RuneCountInString(frag) < 6 {
@@ -24,19 +32,29 @@ func CompareFragments(answer string, sources map[string]string) []SimilarityItem
 				continue
 			}
 			loc := locateIn(answer, frag)
+			key := srcName + "\x00" + frag + "\x00" + loc
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 			hits = append(hits, SimilarityItem{
 				Fragment: frag, Source: srcName, Similarity: round2(sim), Location: loc,
 			})
 		}
 	}
-	// 按相似度降序，最多 8 条
-	for i := 0; i < len(hits); i++ {
-		for j := i + 1; j < len(hits); j++ {
-			if hits[j].Similarity > hits[i].Similarity {
-				hits[i], hits[j] = hits[j], hits[i]
-			}
+	// 按相似度降序，稳定打破并列，最多 8 条。
+	sort.Slice(hits, func(i, j int) bool {
+		if hits[i].Similarity != hits[j].Similarity {
+			return hits[i].Similarity > hits[j].Similarity
 		}
-	}
+		if hits[i].Source != hits[j].Source {
+			return hits[i].Source < hits[j].Source
+		}
+		if hits[i].Location != hits[j].Location {
+			return hits[i].Location < hits[j].Location
+		}
+		return hits[i].Fragment < hits[j].Fragment
+	})
 	if len(hits) > 8 {
 		hits = hits[:8]
 	}

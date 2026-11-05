@@ -1,0 +1,125 @@
+name: quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: campusclaw
+          MYSQL_USER: campusclaw
+          MYSQL_PASSWORD: campusclaw
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: |
+            api/go.sum
+            mcp-teaching-tools/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Validate specifications, tests, frontend and Compose
+        run: |
+          make env
+          make check
+      - name: Race detector
+        run: |
+          (cd api && go test -race ./...)
+          (cd mcp-teaching-tools && go test -race ./...)
+      - name: Durable queue recovery
+        run: cd api && TEST_REDIS_URL=redis://127.0.0.1:6379/15 go test -p=1 ./internal/queue ./internal/store -run 'TestRedis' -count=1
+      - name: Durable business persistence
+        run: cd api && TEST_MYSQL_DSN='campusclaw:campusclaw@tcp(127.0.0.1:3306)/campusclaw?parseTime=true&charset=utf8mb4' go test ./internal/store -run TestMySQL -count=1
+
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install frontend dependencies
+        run: npm --prefix web ci
+      - name: Run security gate
+        run: make check-security
+
+  containers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate and build project images
+        run: |
+          make env
+          docker compose config --quiet
+          docker compose build api worker mcp web
+
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install browser tests
+        run: |
+          npm --prefix web ci
+          (cd web && npx playwright install --with-deps chromium)
+      - name: Start reproducible stack
+        run: |
+          make env
+          docker compose up -d --build
+          for attempt in $(seq 1 60); do
+            curl --fail --silent http://127.0.0.1:18088/health >/dev/null && exit 0
+            sleep 2
+          done
+          docker compose ps
+          exit 1
+      - name: Run browser and API workflows
+        run: make e2e
+      - name: Collect stack logs
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v

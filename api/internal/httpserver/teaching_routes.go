@@ -2,10 +2,16 @@ package httpserver
 
 import (
 	"errors"
+	"log"
 	"net/http"
+	"regexp"
+	"strings"
+	"time"
 
-	"github.com/sheepy-yang/CampusClaw_Group/api/internal/apperrors"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/auth"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/content"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/httpapi"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/store"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/teaching"
 )
 
@@ -13,56 +19,69 @@ type teachingHTTPHandler struct {
 	pipeline teaching.Pipeline
 }
 
-func registerTeachingRoutes(mux *http.ServeMux, pipeline teaching.Pipeline) {
+func registerTeachingRoutes(mux *http.ServeMux, pipeline teaching.Pipeline, contentHandler *content.Handler) {
 	handler := &teachingHTTPHandler{pipeline: pipeline}
 
-	// 刘恺骐：智能内容生产与统一编排（骨架占位，统一 501）。
-	// 智能命题 / 智能备课 / 智能预习单 / 虚拟学生课堂演练
-	mux.HandleFunc("POST /api/v1/skills/proposition", handler.start(teaching.SkillProposition))
-	mux.HandleFunc("POST /api/v1/skills/lesson-plan", handler.start(teaching.SkillLessonPlan))
-	mux.HandleFunc("POST /api/v1/skills/preview-sheet", handler.start(teaching.SkillPreviewSheet))
-	mux.HandleFunc("POST /api/v1/skills/virtual-classroom", handler.start(teaching.SkillVirtualClassroom))
-
-	// 刘沛鑫：个性化辅导与课堂互动（骨架占位，统一 501）。
-	// 个性化复习路径 / 追问式辅导 / 课堂回答聚类 / 自适应练习闯关
-	mux.HandleFunc("POST /api/v1/skills/review-path", handler.start(teaching.SkillReviewPath))
-	mux.HandleFunc("POST /api/v1/skills/socratic-tutor", handler.start(teaching.SkillSocraticTutor))
-	mux.HandleFunc("POST /api/v1/skills/classroom-cluster", handler.start(teaching.SkillClassroomCluster))
-	mux.HandleFunc("POST /api/v1/skills/adaptive-practice", handler.start(teaching.SkillAdaptivePractice))
+	// 刘恺骐：前三项内容生产由 content.Handler 挂载；此处挂载异步课堂演练。
+	mux.HandleFunc("POST /api/v1/skills/virtual-classroom", handler.virtualClassroom)
 
 	// 杨瑾文：作业评价与班级分析（实装路由）。
 	// 多模态主观题批改 / 班级讲评 / 学习诊断 / 作答过程回放与原创性审查
-	teaching.RegisterEvaluationRoutes(mux)
+	teaching.RegisterEvaluationRoutesWithProduction(mux, contentHandler)
 }
 
-func (h *teachingHTTPHandler) start(skill teaching.SkillID) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		record, err := h.pipeline.Start(r.Context(), skill, nil)
-		if writePipelineError(w, r, err) {
-			return
+var idempotencyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$`)
+
+func (h *teachingHTTPHandler) virtualClassroom(w http.ResponseWriter, r *http.Request) {
+	principal, err := auth.Authenticate(r.Context(), r.Header.Get("Authorization"))
+	if err != nil {
+		httpapi.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+		return
+	}
+	if err := auth.RequireTeacher(principal); err != nil {
+		httpapi.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "teacher role required")
+		return
+	}
+	var body struct {
+		LessonPlanID         string `json:"lessonPlanId"`
+		Objective            string `json:"objective"`
+		Rounds               int    `json:"rounds"`
+		PreviousSimulationID string `json:"previousSimulationId,omitempty"`
+	}
+	if !decodeTutoringJSON(w, r, &body) {
+		return
+	}
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if !idempotencyKeyPattern.MatchString(key) {
+		httpapi.WriteError(w, r, http.StatusBadRequest, "INVALID_IDEMPOTENCY_KEY", "Idempotency-Key must contain 8 to 128 safe characters")
+		return
+	}
+	record, err := h.pipeline.Start(r.Context(), teaching.SkillVirtualClassroom, map[string]any{
+		"classId": principal.ClassID, "userId": principal.UserID,
+		"lessonPlanId": body.LessonPlanID, "objective": body.Objective,
+		"rounds": body.Rounds, "previousSimulationId": body.PreviousSimulationID,
+		"idempotencyKey": key,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, teaching.ErrPipelineInvalid):
+			httpapi.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		case errors.Is(err, teaching.ErrPipelineNotFound):
+			httpapi.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "lesson plan or previous simulation not found")
+		case errors.Is(err, teaching.ErrPipelineConflict):
+			httpapi.WriteError(w, r, http.StatusConflict, "CONFLICT", err.Error())
+		default:
+			httpapi.WriteError(w, r, http.StatusServiceUnavailable, "TASK_UNAVAILABLE", "simulation task could not be queued")
 		}
-		httpapi.WriteJSON(w, http.StatusAccepted, record)
+		return
 	}
-}
-
-func writePipelineError(w http.ResponseWriter, r *http.Request, err error) bool {
-	if err == nil {
-		return false
+	if err := store.Default.AppendAudit(store.AuditEvent{
+		ID: store.NewID("audit"), ActorID: principal.UserID, ClassID: principal.ClassID,
+		Action: "virtual_classroom.enqueue", Object: record.ObjectID, Result: "accepted",
+		Skill: string(teaching.SkillVirtualClassroom), RequestID: httpapi.RequestID(r.Context()),
+		CreatedAt: time.Now().UTC(), Detail: map[string]any{"taskId": record.ID},
+	}); err != nil {
+		log.Printf("virtual classroom audit persistence failed task=%s: %v", record.ID, err)
 	}
-	if errors.Is(err, apperrors.ErrNotImplemented) {
-		teachingNotImplemented(w, r)
-		return true
-	}
-	httpapi.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
-	return true
-}
-
-func teachingNotImplemented(w http.ResponseWriter, r *http.Request) {
-	httpapi.WriteError(
-		w,
-		r,
-		http.StatusNotImplemented,
-		"NOT_IMPLEMENTED",
-		"teaching capability is declared but not implemented in the skeleton",
-	)
+	httpapi.WriteJSON(w, http.StatusAccepted, record)
 }

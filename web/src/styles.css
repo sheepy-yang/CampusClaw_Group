@@ -258,6 +258,10 @@ textarea, input, select {
   color: var(--ink);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--accent);
+}
 textarea:focus, input:focus, select:focus {
   outline: none;
   border-color: var(--accent);
@@ -404,6 +408,38 @@ h4 { font-size: 0.95rem; margin: 12px 0 6px; }
 .sub-item b { display: block; font-size: 0.9rem; }
 .sub-item em { font-style: normal; font-size: 0.75rem; color: var(--muted); font-family: "SF Mono", ui-monospace, monospace; }
 .sub-item.active { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(31, 122, 107, 0.12); }
+.sub-list > li {
+  padding: 10px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+}
+
+.chat-log {
+  min-height: 280px;
+  max-height: 560px;
+  overflow-y: auto;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.chat-message {
+  max-width: 88%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.chat-message.user {
+  justify-self: end;
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+}
+.chat-message p {
+  margin: 5px 0;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.chat-message details { margin-top: 8px; }
+.chat-message summary { cursor: pointer; color: var(--accent-hover); font-size: 0.88rem; }
 
 .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .stat { display: grid; gap: 4px; padding: 12px 14px; background: #fff; border: 1px solid var(--line); border-radius: 10px; }

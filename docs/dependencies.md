@@ -2,7 +2,7 @@
 
 ## 代码依赖
 
-- Go API 与 MCP 骨架只使用 Go 标准库。
+- Go API 使用 MySQL 驱动、Redis Streams 客户端和 MinIO S3 客户端，版本由 `api/go.mod` / `api/go.sum` 固定；MCP 服务仅使用 Go 标准库。
 - Web 依赖由 `web/package-lock.json` 固定，使用 `npm ci` 安装。
 - `make verify` 执行 `npm audit --audit-level=high`；发现高危或严重漏洞即失败。
 
@@ -12,7 +12,7 @@
 - Redis：`redis:7`
 - Qdrant：`qdrant/qdrant:v1.12.1`
 - Nginx：`nginx:1.27-alpine`
-- Go 构建：`golang:1.22-alpine`
+- Go 构建：`golang:1.27.3-alpine`
 - Node 构建：`node:20.19-alpine`
 - 运行基础：`alpine:3.20`
 

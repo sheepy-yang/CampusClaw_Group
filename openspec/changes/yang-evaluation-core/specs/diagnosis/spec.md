@@ -1,17 +1,31 @@
 # Spec: diagnosis
 
-## 样本不足
+## ADDED Requirements
 
-- **Given** 学生学习事件 &lt;3  
-- **When** 生成诊断  
-- **Then** 仅返回「样本不足」，`intercepted=true`，`studentVisible=false`
+### Requirement: Evidence-bound learning diagnosis
 
-## 正常路径
+系统 MUST 以可追溯学习事件生成诊断，并在教师确认前对学生隐藏。
 
-- **Given** 事件 ≥3  
-- **When** 生成诊断并完成 Worker  
-- **Then** 每项掌握结论带 `evidence` 事件 ID；默认对学生不可见
+#### Scenario: Intercept insufficient evidence
 
-- **Given** 教师确认放行  
-- **When** `POST .../diagnosis/{id}/release`  
-- **Then** `studentVisible=true` 且内容状态为 published
+- **Given** 当前学生的有效学习事件少于 3 条
+- **When** 教师发起学习诊断
+- **Then** 仅返回“样本不足”、`intercepted=true` 和 `studentVisible=false`，且不调用模型
+
+#### Scenario: Generate an evidence-bound diagnosis
+
+- **Given** 当前学生在本班存在至少 3 条有效事件
+- **When** Worker 完成诊断任务
+- **Then** 每项掌握结论均包含对应 `evidence` 事件标识，默认 `studentVisible=false`
+
+#### Scenario: Release a confirmed diagnosis
+
+- **Given** 教师已核对本班诊断内容
+- **When** 调用 `POST /api/v1/skills/diagnosis/{id}/release`
+- **Then** 内容状态变为 `published` 且 `studentVisible=true`
+
+#### Scenario: Hide a cross-class diagnosis
+
+- **Given** 当前用户请求其他班级的诊断标识
+- **When** 服务端执行班级归属校验
+- **Then** 返回 404 且不泄露诊断是否存在

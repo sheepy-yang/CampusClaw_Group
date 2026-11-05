@@ -43,7 +43,7 @@ func normalizeAnswer(s string) string {
 	return b.String()
 }
 
-// SplitSteps 将转写文本划分为步骤（按换行 / 「步骤N」）。
+// SplitSteps 只负责划分转写文本，不根据答案里是否出现“错误”等字样推断对错。
 func SplitSteps(transcription string) []GradeStep {
 	lines := strings.Split(transcription, "\n")
 	var steps []GradeStep
@@ -54,15 +54,16 @@ func SplitSteps(transcription string) []GradeStep {
 			continue
 		}
 		idx++
-		ok := !strings.Contains(line, "失误") && !strings.Contains(line, "错误") && !strings.Contains(line, "漏")
-		comment := ""
-		if !ok {
-			comment = "疑似出错"
-		}
-		steps = append(steps, GradeStep{Index: idx, Text: line, OK: ok, Comment: comment})
+		steps = append(steps, GradeStep{
+			Index: idx, Text: line, Verified: false,
+			Comment: "待教师依据已发布评分规则核验",
+		})
 	}
 	if len(steps) == 0 && strings.TrimSpace(transcription) != "" {
-		steps = append(steps, GradeStep{Index: 1, Text: strings.TrimSpace(transcription), OK: true})
+		steps = append(steps, GradeStep{
+			Index: 1, Text: strings.TrimSpace(transcription), Verified: false,
+			Comment: "待教师依据已发布评分规则核验",
+		})
 	}
 	return steps
 }
@@ -70,14 +71,14 @@ func SplitSteps(transcription string) []GradeStep {
 // LocateFirstError 首错定位：返回第一个不 OK 的步骤标签。
 func LocateFirstError(steps []GradeStep) string {
 	for _, s := range steps {
-		if !s.OK {
+		if s.Verified && !s.OK {
 			return "步骤" + itoa(s.Index)
 		}
 	}
 	return ""
 }
 
-// SuggestSubjectiveScore 根据步骤对错给出建议分（满分 maxScore）。
+// SuggestSubjectiveScore 保留给无评分规则的调用方；没有可信规则时不猜测步骤对错。
 func SuggestSubjectiveScore(steps []GradeStep, maxScore float64) (suggested float64, confidence float64, cause string) {
 	if maxScore <= 0 {
 		maxScore = 10
@@ -85,32 +86,93 @@ func SuggestSubjectiveScore(steps []GradeStep, maxScore float64) (suggested floa
 	if len(steps) == 0 {
 		return 0, 0.4, "无可解析步骤"
 	}
+	verifiedCount := 0
 	okCount := 0
 	for _, s := range steps {
-		if s.OK {
+		if s.Verified {
+			verifiedCount++
+		}
+		if s.Verified && s.OK {
 			okCount++
 		}
 	}
-	ratio := float64(okCount) / float64(len(steps))
-	suggested = round1(ratio * maxScore)
-	confidence = 0.55 + 0.35*ratio
-	if confidence > 0.95 {
-		confidence = 0.95
+	if verifiedCount == 0 {
+		return 0, 0.3, "缺少已发布评分规则的核验结果"
 	}
-	cause = ""
+	ratio := float64(okCount) / float64(verifiedCount)
+	suggested = round1(ratio * maxScore)
+	confidence = 0.5 + 0.25*ratio
+	if confidence > 0.75 {
+		confidence = 0.75
+	}
+	cause = "与教师发布的评分依据匹配不足"
 	if first := LocateFirstError(steps); first != "" {
-		cause = "计算或步骤失误"
-		for _, s := range steps {
-			if !s.OK {
-				if strings.Contains(s.Text, "秩") || strings.Contains(s.Text, "概念") {
-					cause = "概念混淆"
-				}
-				break
-			}
-		}
 		_ = first
+	} else {
+		cause = ""
 	}
 	return suggested, confidence, cause
+}
+
+// SuggestSubjectiveScoreFromRubric 仅使用教师已发布的参考答案生成低置信度建议；
+// 主观题无论匹配度如何都必须由教师最终确认。
+func SuggestSubjectiveScoreFromRubric(answer, rubric string, maxScore float64) (suggested float64, confidence float64, cause string) {
+	if maxScore <= 0 {
+		maxScore = 10
+	}
+	got := normalizedComparableRunes(answer)
+	want := normalizedComparableRunes(rubric)
+	if len(got) == 0 || len(want) == 0 {
+		return 0, 0.3, "缺少可核验的作答或评分依据"
+	}
+	ratio := ngramRecall(got, want)
+	if string(got) == string(want) || (len(want) >= 2 && strings.Contains(string(got), string(want))) {
+		ratio = 1
+	}
+	suggested = round1(ratio * maxScore)
+	confidence = 0.45 + 0.3*ratio
+	if confidence > 0.75 {
+		confidence = 0.75
+	}
+	if ratio < 0.6 {
+		cause = "与教师发布的评分依据匹配不足"
+	}
+	return suggested, confidence, cause
+}
+
+func normalizedComparableRunes(value string) []rune {
+	out := make([]rune, 0, len([]rune(value)))
+	for _, r := range strings.ToLower(value) {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func ngramRecall(got, want []rune) float64 {
+	width := 2
+	if len(want) < width {
+		if strings.Contains(string(got), string(want)) {
+			return 1
+		}
+		return 0
+	}
+	expected := map[string]struct{}{}
+	for i := 0; i <= len(want)-width; i++ {
+		expected[string(want[i:i+width])] = struct{}{}
+	}
+	observed := map[string]struct{}{}
+	for i := 0; i <= len(got)-width; i++ {
+		observed[string(got[i:i+width])] = struct{}{}
+	}
+	matched := 0
+	for gram := range expected {
+		if _, ok := observed[gram]; ok {
+			matched++
+		}
+	}
+	return float64(matched) / float64(len(expected))
 }
 
 func round1(v float64) float64 {

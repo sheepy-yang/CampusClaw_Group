@@ -77,11 +77,27 @@ services:
       SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:?SHUTDOWN_TIMEOUT is required}
       HEALTH_TIMEOUT: ${HEALTH_TIMEOUT:?HEALTH_TIMEOUT is required}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      AUTH_USERS_JSON: ${AUTH_USERS_JSON:-}
       MYSQL_ADDR: ${MYSQL_ADDR:?MYSQL_ADDR is required}
+      MYSQL_DSN: ${MYSQL_DSN:?MYSQL_DSN is required}
       REDIS_ADDR: ${REDIS_ADDR:?REDIS_ADDR is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
       QDRANT_URL: ${QDRANT_URL:?QDRANT_URL is required}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:?QDRANT_COLLECTION is required}
       MINIO_URL: ${MINIO_URL:?MINIO_URL is required}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_BUCKET: ${MINIO_BUCKET:?MINIO_BUCKET is required}
       MCP_URL: ${MCP_URL:?MCP_URL is required}
+      MCP_TOKEN: ${MCP_TOKEN:?MCP_TOKEN is required}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-}
     expose:
       - "${HTTP_PORT}"
     depends_on:
@@ -109,17 +125,41 @@ services:
     init: true
     environment:
       APP_ENV: ${APP_ENV:?APP_ENV is required}
+      MYSQL_DSN: ${MYSQL_DSN:?MYSQL_DSN is required}
       REDIS_ADDR: ${REDIS_ADDR:?REDIS_ADDR is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
       SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:?SHUTDOWN_TIMEOUT is required}
+      MINIO_URL: ${MINIO_URL:?MINIO_URL is required}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_BUCKET: ${MINIO_BUCKET:?MINIO_BUCKET is required}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
     depends_on:
+      mysql:
+        condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_started
 
   web:
     build:
       context: ./web
     expose:
       - "80"
+
+  swagger:
+    image: swaggerapi/swagger-ui:v5.17.14
+    environment:
+      SWAGGER_JSON: /spec/openapi.yaml
+      BASE_URL: /docs
+    volumes:
+      - ./docs/openapi.yaml:/spec/openapi.yaml:ro
+    expose:
+      - "8080"
 
   nginx:
     image: nginx:1.27-alpine
@@ -135,6 +175,8 @@ services:
       api:
         condition: service_healthy
       web:
+        condition: service_started
+      swagger:
         condition: service_started
 
 volumes:

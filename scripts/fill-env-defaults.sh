@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 为远程骨架式 .env.example（仅键名）填入本地演示默认值；不覆盖已有非空值。
+# 为 .env.example（仅键名）填入本地基础设施默认值；不覆盖已有非空值。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${ROOT}/.env"

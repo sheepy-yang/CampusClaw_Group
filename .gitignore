@@ -11,12 +11,15 @@ bin/
 dist/
 node_modules/
 web/dist/
+web/playwright-report/
+web/test-results/
 *.tsbuildinfo
 .vite/
 .DS_Store
 data/
 *.log
 coverage/
+docs/evidence/artifacts/
 .idea/
 .vscode/
 __pycache__/

@@ -42,6 +42,9 @@ type HTTPHost struct {
 func NewHost() Host {
 	base := os.Getenv("MCP_BASE_URL")
 	if base == "" {
+		base = os.Getenv("MCP_URL")
+	}
+	if base == "" {
 		base = "http://127.0.0.1:8100"
 	}
 	return &HTTPHost{
@@ -54,10 +57,10 @@ func NewHost() Host {
 func (h *HTTPHost) ListTools(ctx context.Context, _ string) ([]string, error) {
 	resp, err := h.rpc(ctx, "tools/list", nil)
 	if err != nil {
-		// 降级：本地已知工具列表
-		return []string{"formula_verify", "assignment_stats", "student_mistakes"}, nil
+		return nil, err
 	}
-	tools, _ := resp["tools"].([]any)
+	result, _ := resp["result"].(map[string]any)
+	tools, _ := result["tools"].([]any)
 	var names []string
 	for _, t := range tools {
 		if m, ok := t.(map[string]any); ok {
@@ -65,7 +68,7 @@ func (h *HTTPHost) ListTools(ctx context.Context, _ string) ([]string, error) {
 		}
 	}
 	if len(names) == 0 {
-		return []string{"formula_verify", "assignment_stats", "student_mistakes"}, nil
+		return nil, fmt.Errorf("mcp returned no tools")
 	}
 	return names, nil
 }
@@ -81,8 +84,8 @@ func (h *HTTPHost) Call(ctx context.Context, call ToolCall) (*ToolResult, error)
 	if err != nil {
 		return &ToolResult{OK: false, Error: err.Error(), DataOnly: true}, nil
 	}
-	if errMsg, ok := resp["error"].(string); ok && errMsg != "" {
-		return &ToolResult{OK: false, Error: errMsg, DataOnly: true}, nil
+	if rawError, ok := resp["error"].(map[string]any); ok {
+		return &ToolResult{OK: false, Error: fmt.Sprint(rawError["message"]), DataOnly: true}, nil
 	}
 	data, _ := resp["result"].(map[string]any)
 	if data == nil {
@@ -116,5 +119,3 @@ func (h *HTTPHost) rpc(ctx context.Context, method string, params map[string]any
 	}
 	return out, nil
 }
-
-type StubHost = HTTPHost

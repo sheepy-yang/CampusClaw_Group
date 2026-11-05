@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/httpapi"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/metrics"
 )
 
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
@@ -89,10 +90,17 @@ func requestLogging(logger *slog.Logger, next http.Handler) http.Handler {
 
 		recorder := &statusWriter{ResponseWriter: w}
 		started := time.Now()
+		routePattern := "unmatched"
+		if resolver, ok := next.(interface {
+			Handler(*http.Request) (http.Handler, string)
+		}); ok {
+			_, routePattern = resolver.Handler(r)
+		}
 		next.ServeHTTP(recorder, r)
 		if recorder.status == 0 {
 			recorder.status = http.StatusOK
 		}
+		metrics.ObserveHTTP(r.Method, routePattern, recorder.status, time.Since(started))
 
 		logger.InfoContext(
 			ctx,

@@ -4,7 +4,7 @@
 
 仓库已具备个性化辅导相关的数据结构、Agent/Gateway 契约、内存 Store、部分状态机和前端入口，但四项技能仍未形成真实可运行的主路径：公开路由仍返回 501，模型结果和 MCP 返回缺少完整校验，练习由客户端提交判定结果，课堂聚类会自动制造演示回答，MCP `tools/call` 尚未实现。
 
-本 Change 在现有工程上完成「个性化学习与课堂互动 V1」，复用当前 Go 1.22 `net/http`、React + TypeScript、Memory Store、Agent/Orchestrator、认证、审计与安全工具，不重建技术栈，也不修改其他成员负责的业务逻辑。
+本 Change 在现有工程上完成「个性化学习与课堂互动 V1」，复用当前 Go 1.27.3 `net/http`、React + TypeScript、持久化 Repository、Agent/Orchestrator、认证、审计与安全工具，不重建技术栈，也不修改其他成员负责的业务逻辑。
 
 ## What Changes
 

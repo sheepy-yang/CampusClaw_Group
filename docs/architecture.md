@@ -5,8 +5,9 @@
 
 ```text
 Browser → Nginx → Go API
-                ├─ platform / teaching / agent / gateway / mcpclient
-                └─ Redis Worker
+                ├─ platform / content / tutoring / evaluation
+                ├─ agent / gateway / retrieval / mcp host
+                └─ Redis Streams → independent Worker
 依赖：MySQL · Qdrant · Redis · MinIO · mcp-teaching-tools · LLM Gateway
 ```
 
@@ -14,6 +15,6 @@ Browser → Nginx → Go API
 
 | 成员 | 包路径 |
 | --- | --- |
-| 刘恺骐 | `api/internal/teaching/modules/content` + `api/internal/agent`（编排/内容/验证） |
+| 刘恺骐 | `api/internal/content` + `api/internal/agent` + `api/internal/teaching/pipeline.go`（内容生成、验证与虚拟课堂编排） |
 | 杨瑾文 | `api/internal/teaching/modules/evaluation` + `api/internal/queue` |
-| 刘沛鑫 | `api/internal/teaching/modules/tutoring` + `mcp-teaching-tools` |
+| 刘沛鑫 | `api/internal/tutoring` + `api/internal/httpserver/tutoring_handlers.go` + `mcp-teaching-tools` |

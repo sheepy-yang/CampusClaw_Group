@@ -126,7 +126,7 @@ Go API
   ├─ 智能服务：模型网关、MCP 主机、安全检查与 SSE
   │
   ├─ MySQL：业务数据、演练会话、作答版本、批改结果、诊断与审计
-  ├─ Qdrant：讲义切片、试题、错题和匿名作答向量
+  ├─ Qdrant：按班级隔离的讲义切片向量
   ├─ Redis + Worker：课堂演练、批改、相似性分析、讲评、诊断和命题
   ├─ MinIO：手写作答与附件对象
   ├─ MCP Server：受鉴权和审计约束的教学工具
@@ -236,7 +236,7 @@ MCP 服务实现 `initialize`、`tools/list` 和 `tools/call`，使用 Bearer To
 - 实现课堂互动页面、学生复习页面及内容安全检查；
 - 编写对应 OpenSpec、自动化测试和 AI 评测，交叉验收刘恺骐的模块。
 
-三人共同维护 Docker Compose、CI、接口文档和公网部署，并以 Issue、Commit、Pull Request、规约、测试报告和交叉评审记录说明个人贡献。
+三人共同维护 Docker Compose、CI、接口文档和部署，并以提交历史、规约、测试报告和交叉评审记录说明个人贡献。
 
 ## 六、验收指标与交付内容
 
@@ -276,8 +276,8 @@ MCP 服务实现 `initialize`、`tools/list` 和 `tools/call`，使用 Bearer To
 
 ## 本仓库实现说明
 
-> 已实现十二项技能的**可运行主路径**（内存存储 + 离线模型合成 + 进程内队列）。  
-> 配置 `LLM_API_KEY` 后可切换到真实模型网关；MySQL / Redis / Qdrant / MinIO 已在 Compose 中就绪，业务层可继续替换为持久化实现。
+> 已实现十二项技能的**可运行主路径**。业务记录持久化到 MySQL，异步任务由 Redis Streams 和独立 Worker 处理，讲义向量写入 Qdrant，真实图片附件保存到 MinIO。  
+> 配置课程模型网关后启用对话、内容生成、虚拟课堂和图片转写；未配置密钥时仅启用明确标记的本地演示适配器，图片转写会显式失败并保留提交。
 
 环境与依赖明细见 **[REQUIREMENTS.md](./REQUIREMENTS.md)**。
 
@@ -290,7 +290,7 @@ MCP 服务实现 `initialize`、`tools/list` 和 `tools/call`，使用 Bearer To
 ├── docker-compose.yml          # Web / API / MCP / MySQL / Redis / Qdrant / MinIO / Nginx
 ├── .env.example
 ├── nginx/nginx.conf
-├── api/                        # Go API（内嵌异步 Worker）
+├── api/                        # Go API 与独立异步 Worker
 ├── web/                        # React + TypeScript（教师端 / 学生端）
 ├── mcp-teaching-tools/         # formula_verify / assignment_stats / student_mistakes
 ├── openspec/                   # 规约变更目录
@@ -312,7 +312,7 @@ make up
 - http://127.0.0.1:18088 （Nginx 统一入口 / 健康检查）
 - 本地前端开发：http://127.0.0.1:5173
 
-验收基线：`make verify`（OpenSpec、Go 测试、前端构建、Compose 配置）。
+验收基线：`make verify`（OpenSpec、Go 测试、前端构建、Compose 配置）。启动完整 Compose 后可运行 `make e2e`，验证浏览器登录、跨班隔离和作业异步批改主路径；`make load-smoke` 执行有界并发冒烟。性能记录方法见 [docs/performance-verification.md](./docs/performance-verification.md)，人工证据要求见 [docs/evidence/README.md](./docs/evidence/README.md)。
 
 ### 测试账号（演示环境）
 
@@ -321,9 +321,15 @@ make up
 | 教师 | `teacher` | `demo123` | 张老师，班级 `class-demo` |
 | 学生 | `student` | `demo123` | 李同学，班级 `class-demo` |
 | 学生 | `student2` | `demo123` | 王同学，班级 `class-demo` |
+| 学生 | `student3` | `demo123` | 赵同学，班级 `class-demo` |
+| 学生 | `student4` | `demo123` | 钱同学，班级 `class-demo` |
+| 学生 | `student5` | `demo123` | 孙同学，班级 `class-demo` |
+| 教师 | `teacher_other` | `demo123` | 其他班教师，班级 `class-other` |
+| 学生 | `student_other` | `demo123` | 其他班学生，班级 `class-other` |
 
-首页可用账号密码登录；也可点「教师 / 学生」一键进入。  
-接口调试时在 Header 带 `Authorization: Bearer <token>`，对应 Token 为 `teacher-demo` / `student-demo` / `student-demo-2`。
+首页可用账号密码登录；也可点「教师 / 学生」一键进入。登录接口每次返回随机、限时且可撤销的会话令牌；接口调试时应把本次登录响应中的 `token` 放入 `Authorization: Bearer <token>`，仓库不提供固定令牌。
+
+上述账号、种子讲义和确定性离线模型只在 `APP_ENV=local|development|test|demo` 时启用。其他环境禁止演示账号和伪造模型回退：必须通过 `AUTH_USERS_JSON` 配置 bcrypt 密码哈希用户，并提供课程模型网关地址与密钥；会话令牌使用 `SESSION_SECRET` 做 HMAC 完整性校验。`AUTH_USERS_JSON` 只放部署环境，不得提交到仓库。
 
 ```bash
 # 示例：教师登录（经 Nginx）
@@ -346,7 +352,7 @@ curl -s -X POST http://127.0.0.1:18088/api/v1/auth/login \
 docker compose up -d mysql redis qdrant minio
 ```
 
-本机开发（需 Go 1.22+、Node 20+）：
+本机开发（需 Go 1.27.3+、Node 20+）：
 
 ```bash
 cd api && go run ./cmd/server

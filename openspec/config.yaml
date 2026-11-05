@@ -3,7 +3,7 @@ schema: spec-driven
 context: |
   Product: CampusClaw intelligent teaching workflow extension.
   Current phase: spec-driven MVP development on the validated project skeleton; only strictly validated OpenSpec changes may add teaching business logic.
-  Stack: React 18 + TypeScript + Vite, Go 1.22 net/http, MySQL 8, Redis 7, Qdrant, MinIO, Nginx and Docker Compose.
+  Stack: React 18 + TypeScript + Vite, Go 1.27.3 net/http, MySQL 8, Redis 7, Qdrant, MinIO, Nginx and Docker Compose.
   Architecture: Transport -> Application -> Domain/Port; infrastructure adapters implement ports.
   Security: server-side authentication, role authorization, class isolation and server-only secrets.
   Delivery: only Nginx is exposed; GET /health reports API dependency connectivity.

@@ -1,11 +1,16 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // ChatMessage 模型对话消息。
@@ -51,15 +56,60 @@ type OfflineClient struct {
 	Model string
 }
 
+type unavailableClient struct {
+	reason error
+}
+
 func NewClient() Client {
-	if key := os.Getenv("LLM_API_KEY"); key != "" {
+	chatAPIKey := envFirst("LLM_API_KEY", "EMBEDDING_API_KEY")
+	chatBaseURL := envFirst("LLM_BASE_URL", "EMBEDDING_BASE_URL")
+	embeddingAPIKey := envFirst("EMBEDDING_API_KEY", "LLM_API_KEY")
+	embeddingBaseURL := envFirst("EMBEDDING_BASE_URL", "LLM_BASE_URL")
+	if chatAPIKey != "" || embeddingAPIKey != "" {
+		if chatAPIKey == "" || chatBaseURL == "" || embeddingAPIKey == "" || embeddingBaseURL == "" {
+			return &unavailableClient{reason: fmt.Errorf("model gateway configuration is incomplete")}
+		}
 		return &HTTPClient{
-			APIKey:  key,
-			BaseURL: strings.TrimRight(os.Getenv("LLM_BASE_URL"), "/"),
-			Model:   envOr("LLM_MODEL", "gpt-4o-mini"),
+			APIKey:           chatAPIKey,
+			BaseURL:          strings.TrimRight(chatBaseURL, "/"),
+			Model:            envOr("LLM_MODEL", "course-chat"),
+			EmbeddingAPIKey:  embeddingAPIKey,
+			EmbeddingBaseURL: strings.TrimRight(embeddingBaseURL, "/"),
+			EmbeddingModel:   envOr("EMBEDDING_MODEL", "course-embedding"),
+			EmbeddingDim:     envInt("EMBEDDING_DIM"),
+			Client:           &http.Client{Timeout: 30 * time.Second},
 		}
 	}
+	if !demoEnvironment() {
+		return &unavailableClient{reason: fmt.Errorf("model gateway credentials are required outside demo environments")}
+	}
 	return &OfflineClient{Model: "offline-demo"}
+}
+
+func demoEnvironment() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV"))) {
+	case "", "local", "development", "dev", "test", "demo":
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *unavailableClient) Chat(context.Context, ChatRequest) (*ChatResponse, error) {
+	return nil, c.reason
+}
+
+func (c *unavailableClient) Embed(context.Context, EmbeddingRequest) (*EmbeddingResponse, error) {
+	return nil, c.reason
+}
+
+func envFirst(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func envOr(k, def string) string {
@@ -67,6 +117,11 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+func envInt(key string) int {
+	value, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(key)))
+	return value
 }
 
 func (c *OfflineClient) Chat(_ context.Context, req ChatRequest) (*ChatResponse, error) {
@@ -129,13 +184,13 @@ func synthesize(prompt string, multimodal bool) map[string]any {
 			"questions": []map[string]any{
 				{
 					"id": "q1", "type": "fill", "difficulty": "medium",
-					"stem": "完成高斯消元后，系数矩阵的阶梯型秩与增广矩阵秩相等说明什么？",
+					"stem":   "完成高斯消元后，系数矩阵的阶梯型秩与增广矩阵秩相等说明什么？",
 					"answer": "方程组有解", "explanation": "有解判定定理",
 					"citations": []map[string]any{{"sourceId": "c3", "snippet": "秩等于增广矩阵秩时有解。"}},
 				},
 				{
 					"id": "q2", "type": "choice", "difficulty": "easy",
-					"stem": "齐次线性方程组是否一定有解？",
+					"stem":   "齐次线性方程组是否一定有解？",
 					"answer": "是，至少有零解", "explanation": "零向量总是解",
 					"citations": []map[string]any{{"sourceId": "c4", "snippet": "齐次方程总有零解。"}},
 				},
@@ -181,20 +236,20 @@ func synthesize(prompt string, multimodal bool) map[string]any {
 		}
 	case multimodal || strings.Contains(prompt, "批改") || strings.Contains(prompt, "转写"):
 		return map[string]any{
-			"transcription": "步骤1: 写出增广矩阵\n步骤2: 交换第1、2行\n步骤3: 回代得 x=1（此处计算失误）",
-			"steps":         []string{"写出增广矩阵", "交换行", "回代"},
-			"firstError":    "步骤3",
+			"transcription":  "步骤1: 写出增广矩阵\n步骤2: 交换第1、2行\n步骤3: 回代得 x=1（此处计算失误）",
+			"steps":          []string{"写出增广矩阵", "交换行", "回代"},
+			"firstError":     "步骤3",
 			"suggestedScore": 6.0,
-			"maxScore":      10.0,
-			"errorCause":    "计算失误",
-			"confidence":    0.72,
+			"maxScore":       10.0,
+			"errorCause":     "计算失误",
+			"confidence":     0.72,
 		}
 	case strings.Contains(prompt, "讲评"):
 		return map[string]any{
-			"outline":       []string{"高频错题：秩判定", "共性错因：混淆矩阵"},
-			"examples":      []string{"对比系数矩阵与增广矩阵"},
-			"remedial":      []string{"补救题：判断下列方程组解的情况"},
-			"commonCauses":  []string{"行变换不完整", "秩概念混淆"},
+			"outline":      []string{"高频错题：秩判定", "共性错因：混淆矩阵"},
+			"examples":     []string{"对比系数矩阵与增广矩阵"},
+			"remedial":     []string{"补救题：判断下列方程组解的情况"},
+			"commonCauses": []string{"行变换不完整", "秩概念混淆"},
 		}
 	case strings.Contains(prompt, "诊断"):
 		return map[string]any{
@@ -230,11 +285,11 @@ func synthesize(prompt string, multimodal bool) map[string]any {
 	case strings.Contains(prompt, "练习") || strings.Contains(lower, "adaptive"):
 		return map[string]any{
 			"question": map[string]any{
-				"stem": "对增广矩阵做一次行交换后，下一步通常做什么？",
-				"answer": "消元使主元下方为 0",
+				"stem":       "对增广矩阵做一次行交换后，下一步通常做什么？",
+				"answer":     "消元使主元下方为 0",
 				"difficulty": "medium",
-				"citations": []map[string]any{{"sourceId": "c2", "snippet": "高斯消元法通过初等行变换求阶梯型。"}},
-				"verified": true,
+				"citations":  []map[string]any{{"sourceId": "c2", "snippet": "高斯消元法通过初等行变换求阶梯型。"}},
+				"verified":   true,
 			},
 		}
 	default:
@@ -244,22 +299,157 @@ func synthesize(prompt string, multimodal bool) map[string]any {
 
 // HTTPClient 可选真实网关（有密钥时启用）；失败时降级到 Offline。
 type HTTPClient struct {
-	APIKey  string
-	BaseURL string
-	Model   string
+	APIKey           string
+	BaseURL          string
+	Model            string
+	EmbeddingAPIKey  string
+	EmbeddingBaseURL string
+	EmbeddingModel   string
+	EmbeddingDim     int
+	Client           *http.Client
 }
 
 func (c *HTTPClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-	// 骨架阶段：密钥存在但未接具体厂商时，仍走离线合成，避免阻塞演示。
-	_ = ctx
-	off := &OfflineClient{Model: c.Model}
-	return off.Chat(ctx, req)
+	if c.APIKey == "" || c.BaseURL == "" {
+		return (&OfflineClient{Model: "offline-demo"}).Chat(ctx, req)
+	}
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		model = c.Model
+	}
+	messages := make([]map[string]any, 0, len(req.Messages))
+	for i, message := range req.Messages {
+		content := any(message.Content)
+		if i == len(req.Messages)-1 && message.Role == "user" && len(req.MultimodalURLs) > 0 {
+			parts := []map[string]any{{"type": "text", "text": message.Content}}
+			for _, rawURL := range req.MultimodalURLs {
+				if strings.TrimSpace(rawURL) == "" {
+					continue
+				}
+				parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": rawURL}})
+			}
+			content = parts
+		}
+		messages = append(messages, map[string]any{"role": message.Role, "content": content})
+	}
+	payload := map[string]any{"model": model, "messages": messages, "temperature": 0.2}
+	var response struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Usage struct {
+			TotalTokens int `json:"total_tokens"`
+		} `json:"usage"`
+		Model string `json:"model"`
+	}
+	if err := c.post(ctx, c.BaseURL+"/chat/completions", c.APIKey, payload, &response); err != nil {
+		return nil, err
+	}
+	if len(response.Choices) == 0 || strings.TrimSpace(response.Choices[0].Message.Content) == "" {
+		return nil, fmt.Errorf("model gateway returned no chat choice")
+	}
+	text := strings.TrimSpace(response.Choices[0].Message.Content)
+	var raw map[string]any
+	_ = json.Unmarshal([]byte(stripCodeFence(text)), &raw)
+	responseModel := response.Model
+	if responseModel == "" {
+		responseModel = model
+	}
+	return &ChatResponse{Text: text, RawJSON: raw, Model: responseModel, TokensUsed: response.Usage.TotalTokens}, nil
 }
 
 func (c *HTTPClient) Embed(ctx context.Context, req EmbeddingRequest) (*EmbeddingResponse, error) {
-	off := &OfflineClient{Model: c.Model}
-	return off.Embed(ctx, req)
+	if c.EmbeddingAPIKey == "" || c.EmbeddingBaseURL == "" {
+		return (&OfflineClient{Model: "offline-demo"}).Embed(ctx, req)
+	}
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		model = c.EmbeddingModel
+	}
+	var response struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+			Index     int       `json:"index"`
+		} `json:"data"`
+		Model string `json:"model"`
+	}
+	payload := map[string]any{"model": model, "input": req.Texts}
+	if err := c.post(ctx, c.EmbeddingBaseURL+"/embeddings", c.EmbeddingAPIKey, payload, &response); err != nil {
+		return nil, err
+	}
+	if len(response.Data) != len(req.Texts) {
+		return nil, fmt.Errorf("embedding gateway returned %d vectors for %d inputs", len(response.Data), len(req.Texts))
+	}
+	sortEmbeddingData(response.Data)
+	vectors := make([][]float32, len(response.Data))
+	for i, item := range response.Data {
+		if c.EmbeddingDim > 0 && len(item.Embedding) != c.EmbeddingDim {
+			return nil, fmt.Errorf("embedding dimension %d does not match configured %d", len(item.Embedding), c.EmbeddingDim)
+		}
+		vectors[i] = item.Embedding
+	}
+	responseModel := response.Model
+	if responseModel == "" {
+		responseModel = model
+	}
+	return &EmbeddingResponse{Vectors: vectors, Model: responseModel}, nil
 }
 
-// StubClient 兼容旧名称。
-type StubClient = OfflineClient
+func (c *HTTPClient) post(ctx context.Context, endpoint, apiKey string, payload any, dst any) error {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode gateway request: %w", err)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
+	if err != nil {
+		return fmt.Errorf("create gateway request: %w", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+apiKey)
+	request.Header.Set("Content-Type", "application/json")
+	client := c.Client
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("model gateway unavailable: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		return fmt.Errorf("model gateway returned HTTP %d", response.StatusCode)
+	}
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 20<<20))
+	if err := decoder.Decode(dst); err != nil {
+		return fmt.Errorf("decode gateway response: %w", err)
+	}
+	return nil
+}
+
+func stripCodeFence(value string) string {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "```") {
+		return value
+	}
+	lines := strings.Split(value, "\n")
+	if len(lines) >= 2 {
+		lines = lines[1:]
+	}
+	if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "```" {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func sortEmbeddingData(data []struct {
+	Embedding []float32 `json:"embedding"`
+	Index     int       `json:"index"`
+}) {
+	for i := 1; i < len(data); i++ {
+		for j := i; j > 0 && data[j].Index < data[j-1].Index; j-- {
+			data[j], data[j-1] = data[j-1], data[j]
+		}
+	}
+}

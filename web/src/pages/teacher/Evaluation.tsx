@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../../api";
+import { api, classApiPath } from "../../api";
 
 /* ---------- 共享工具 ---------- */
 
@@ -63,7 +63,7 @@ function Bar({ value, max, tone = "accent" }: { value: number; max: number; tone
  * 多模态主观题批改
  * ========================================================== */
 
-type Step = { index: number; text: string; ok: boolean; comment?: string };
+type Step = { index: number; text: string; ok?: boolean; verified?: boolean; comment?: string };
 type HistoryEntry = { before: number | null; after: number; note?: string; teacherId?: string; at?: string };
 type Sub = {
   id: string;
@@ -95,6 +95,7 @@ const STATUS_META: Record<string, { label: string; tone: string; stage: number }
   needs_teacher_review: { label: "待教师复核", tone: "todo", stage: 4 },
   graded_suggested: { label: "已给建议分", tone: "done", stage: 5 },
   teacher_final: { label: "教师定分", tone: "done", stage: 5 },
+  graded: { label: "客观题已判定", tone: "done", stage: 5 },
   failed_submission_kept: { label: "模型失败（提交保留）", tone: "err", stage: 1 },
   drafting: { label: "草稿", tone: "info", stage: 0 },
 };
@@ -125,19 +126,12 @@ export function GradePage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
-  const [draft, setDraft] = useState("步骤1: 写出增广矩阵\n步骤2: 交换第1、2行\n步骤3: 回代得 x=1（此处计算失误）");
-  const [editText, setEditText] = useState("");
   const [finalScore, setFinalScore] = useState("");
   const [finalNote, setFinalNote] = useState("");
   const [raw, setRaw] = useState<unknown>(null);
 
-  const [objType, setObjType] = useState("choice");
-  const [objGot, setObjGot] = useState("A");
-  const [objWant, setObjWant] = useState("A");
-  const [objResult, setObjResult] = useState<{ score: number; maxScore: number; correct: boolean; method: string; usedLLM: boolean } | null>(null);
-
   async function refreshList() {
-    const data = await api<Sub[]>("/api/v1/skills/multimodal-grade?assignmentId=asg-1");
+    const data = await api<Sub[]>("/api/v1/skills/multimodal-grade");
     setList(data || []);
   }
 
@@ -149,60 +143,8 @@ export function GradePage() {
     setErr("");
     const d = await api<Sub>(`/api/v1/skills/multimodal-grade/${id}`);
     setSub(d);
-    setEditText(d.transcription || "");
     setFinalScore("");
     setFinalNote("");
-  }
-
-  async function enqueue() {
-    setBusy(true);
-    setErr("");
-    setToast("已落库并投递，等待 Worker 转写…");
-    try {
-      const res = await api<{ submissionId: string; note: string }>("/api/v1/skills/multimodal-grade", {
-        method: "POST",
-        body: JSON.stringify({ assignmentId: "asg-1", answerText: draft, imageDigest: "sha256:demo", maxScore: 10 }),
-      });
-      setRaw(res);
-      const done = await pollUntil<Sub>(
-        () => api<Sub>(`/api/v1/skills/multimodal-grade/${res.submissionId}`),
-        (v) => v.status !== "queued" && v.status !== "ocr_processing"
-      );
-      if (done) {
-        setSub(done);
-        setEditText(done.transcription || "");
-        setToast(
-          done.status === "failed_submission_kept"
-            ? ""
-            : "转写完成，请学生确认转写文本后进入评分。"
-        );
-        if (done.status === "failed_submission_kept") setErr("模型失败：提交已保留，可稍后重试，不会丢失。");
-      }
-      refreshList().catch(() => undefined);
-    } catch (e) {
-      setErr(errMsg(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function confirmTranscription() {
-    setBusy(true);
-    setErr("");
-    try {
-      const res = await api<{ submission: Sub; pipeline: string[] }>("/api/v1/skills/multimodal-grade/confirm-transcription", {
-        method: "POST",
-        body: JSON.stringify({ submissionId: sub?.id || "", text: editText }),
-      });
-      setSub(res.submission);
-      setRaw(res.pipeline);
-      setToast(res.submission.needsReview ? "转写已确认；置信度偏低，已转入教师复核。" : "转写已确认，评分完成。");
-      refreshList().catch(() => undefined);
-    } catch (e) {
-      setErr(errMsg(e));
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function override() {
@@ -229,20 +171,6 @@ export function GradePage() {
     }
   }
 
-  async function runObjective() {
-    setErr("");
-    try {
-      setObjResult(
-        await api("/api/v1/skills/multimodal-grade/objective", {
-          method: "POST",
-          body: JSON.stringify({ type: objType, studentAnswer: objGot, standardAnswer: objWant }),
-        })
-      );
-    } catch (e) {
-      setErr(errMsg(e));
-    }
-  }
-
   const stage = sub ? STATUS_META[sub.status]?.stage ?? 0 : -1;
   const failed = sub?.status === "failed_submission_kept";
   const max = sub?.maxScore || 10;
@@ -260,15 +188,11 @@ export function GradePage() {
 
       <div className="cols">
         <section className="panel grid">
-          <h3>投递批改任务</h3>
-          <textarea rows={5} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="手写作答转写文本，按行分步" />
-          <div className="row">
-            <button onClick={enqueue} disabled={busy}>{busy ? "处理中…" : "投递批改"}</button>
+          <div className="row spread">
+            <h3>本班学生提交（{list.length}）</h3>
             <button className="secondary" onClick={() => refreshList().catch((e) => setErr(errMsg(e)))}>刷新列表</button>
           </div>
-
-          <h3>本班提交（{list.length}）</h3>
-          {list.length === 0 && <p className="empty-hint">暂无提交，先投递一份批改任务。</p>}
+          {list.length === 0 && <p className="empty-hint">暂无学生提交。学生须在学习台上传文本或真实图片。</p>}
           <ul className="sub-list">
             {list.map((s) => (
               <li key={s.id}>
@@ -329,25 +253,24 @@ export function GradePage() {
 
             <div>
               <h4>转写文本（{sub.transcriptionConfirmed ? "已确认" : "待确认"}）</h4>
-              <textarea rows={4} value={editText} onChange={(e) => setEditText(e.target.value)} />
+              <textarea rows={4} value={sub.transcription || ""} readOnly />
               <div className="row">
-                <button onClick={confirmTranscription} disabled={busy || !sub.transcription}>
-                  确认转写（学生）
-                </button>
+                {!sub.transcriptionConfirmed && <span className="notice info">等待该学生本人确认转写，教师不能代替确认。</span>}
                 {sub.imageDigest && <span className="muted mono">图片摘要 {sub.imageDigest}</span>}
               </div>
             </div>
 
             {sub.steps && sub.steps.length > 0 && (
               <div>
-                <h4>步骤划分（{sub.steps.filter((s) => s.ok).length}/{sub.steps.length} 正确）</h4>
+                <h4>步骤划分（{sub.steps.filter((s) => s.verified && s.ok).length}/{sub.steps.filter((s) => s.verified).length} 已核验正确）</h4>
                 <div className="step-cards">
                   {sub.steps.map((st) => (
-                    <div key={st.index} className={`step-card ${st.ok ? "ok" : "bad"} ${sub.firstErrorStep === `步骤${st.index}` ? "first" : ""}`}>
-                      <span className="mark">{st.ok ? "✓" : "✗"}</span>
+                    <div key={st.index} className={`step-card ${!st.verified ? "" : st.ok ? "ok" : "bad"} ${sub.firstErrorStep === `步骤${st.index}` ? "first" : ""}`}>
+                      <span className="mark">{!st.verified ? "?" : st.ok ? "✓" : "✗"}</span>
                       <div>
                         <b>步骤 {st.index}</b>
                         <p>{st.text}</p>
+                        {!st.verified && <span className="badge todo">待教师核验</span>}
                         {st.comment && <span className="muted">评语：{st.comment}</span>}
                       </div>
                       {sub.firstErrorStep === `步骤${st.index}` && <span className="badge err">首错</span>}
@@ -399,35 +322,10 @@ export function GradePage() {
           </section>
         ) : (
           <section className="panel">
-            <p className="empty-hint">从左侧投递批改任务或选择一份提交查看详情。</p>
+            <p className="empty-hint">从左侧选择一份学生提交查看详情。</p>
           </section>
         )}
       </div>
-
-      <section className="panel grid">
-        <h3>客观题规则判分</h3>
-        <p className="muted">确定性规则，即时返回，不进入异步队列、不调用大模型。</p>
-        <div className="row">
-          <select value={objType} onChange={(e) => setObjType(e.target.value)} style={{ width: 120 }}>
-            <option value="choice">选择题</option>
-            <option value="fill">填空题</option>
-          </select>
-          <input style={{ width: 140 }} value={objGot} onChange={(e) => setObjGot(e.target.value)} placeholder="学生答案" />
-          <input style={{ width: 160 }} value={objWant} onChange={(e) => setObjWant(e.target.value)} placeholder="标准答案（| 分隔多个）" />
-          <button className="secondary" onClick={runObjective}>判分</button>
-        </div>
-        {objResult && (
-          <div className={`obj-card ${objResult.correct ? "ok" : "bad"}`}>
-            <b>{objResult.correct ? "✓ 正确" : "✗ 错误"}</b>
-            <div>
-              <Bar value={objResult.score} max={objResult.maxScore} tone={objResult.correct ? "good" : "err"} />
-            </div>
-            <span>{objResult.score} / {objResult.maxScore} 分</span>
-            <span className="pill">{objResult.method}</span>
-            <span className="pill">{objResult.usedLLM ? "已用模型" : "未调用模型"}</span>
-          </div>
-        )}
-      </section>
     </div>
   );
 }
@@ -465,13 +363,21 @@ const CONTENT_STATUS: Record<string, { label: string; tone: string }> = {
 };
 
 export function ReviewPage() {
-  const [feedbacks, setFeedbacks] = useState(
-    "李同学：秩判定弄反了\n王同学：行变换只变了系数矩阵\n张同学：概念混淆\n赵同学：回代计算失误\n钱同学：漏看增广列"
-  );
+  const [assignments, setAssignments] = useState<Array<{ id: string; title: string }>>([]);
+  const [assignmentId, setAssignmentId] = useState("");
   const [result, setResult] = useState<Record<string, any> | null>(null);
   const [content, setContent] = useState<Content | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api<Array<{ id: string; title: string }>>(classApiPath("/assignments"))
+      .then((items) => {
+        setAssignments(items);
+        if (items[0]) setAssignmentId(items[0].id);
+      })
+      .catch((error) => setErr(errMsg(error)));
+  }, []);
 
   async function loadContent(id: string) {
     setContent(await api<Content>(`/api/v1/contents/${id}`));
@@ -483,10 +389,9 @@ export function ReviewPage() {
     setResult(null);
     setContent(null);
     try {
-      const lines = feedbacks.split("\n").map((s) => s.trim()).filter(Boolean);
       const res = await api<Record<string, any>>("/api/v1/skills/class-review", {
         method: "POST",
-        body: JSON.stringify({ assignmentId: "asg-1", feedbacks: lines }),
+        body: JSON.stringify({ assignmentId }),
       });
       setResult(res);
       if (res.skipped) return;
@@ -532,13 +437,14 @@ export function ReviewPage() {
       </header>
 
       <section className="panel grid">
-        <label className="muted">
-          有效反馈（每行一条，含学生姓名以演示匿名化）
-          <textarea rows={5} value={feedbacks} onChange={(e) => setFeedbacks(e.target.value)} />
+        <label className="muted">作业
+          <select value={assignmentId} onChange={(event) => setAssignmentId(event.target.value)}>
+            {assignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{assignment.title}</option>)}
+          </select>
         </label>
         <div className="row">
-          <button onClick={generate} disabled={busy}>生成讲评</button>
-          <span className="muted">当前 {feedbacks.split("\n").filter((s) => s.trim()).length} 条</span>
+          <button onClick={generate} disabled={busy || !assignmentId}>基于真实提交生成讲评</button>
+          <span className="muted">错因只从该作业已落库提交读取，不接受手填样本。</span>
         </div>
         {err && <Notice tone="err">{err}</Notice>}
       </section>
@@ -797,7 +703,14 @@ export function DiagnosisPage() {
 type Snapshot = { version: number; content: string; createdAt: string; trigger: string };
 type Timeline = { attemptId: string; snapshots: Snapshot[]; citations?: string[]; aiUsageNote?: string; policy?: string };
 type SimItem = { fragment: string; source: string; similarity: number; location: string };
-type SimReport = { attemptId: string; evidence: SimItem[]; note: string; verdict: unknown };
+type SimReport = {
+  attemptId: string;
+  evidence?: SimItem[];
+  note?: string;
+  verdict: unknown;
+  status?: "queued" | "running" | "succeeded";
+  taskId?: string;
+};
 
 export function ReplayPage() {
   const [attemptId, setAttemptId] = useState("");
@@ -854,7 +767,16 @@ export function ReplayPage() {
     setBusy(true);
     setErr("");
     try {
-      setSim(await api<SimReport>(`/api/v1/skills/answer-replay/${attemptId}/similarity`));
+      let report = await api<SimReport>(`/api/v1/skills/answer-replay/${attemptId}/similarity`);
+      setSim(report);
+      for (let attempt = 0; report.status === "queued" && attempt < 40; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+        report = await api<SimReport>(`/api/v1/skills/answer-replay/${attemptId}/similarity`);
+        setSim(report);
+      }
+      if (report.status === "queued") {
+        throw new Error("原创性证据仍在生成，请稍后重试");
+      }
     } catch (e) {
       setErr(errMsg(e));
     } finally {
@@ -935,8 +857,10 @@ export function ReplayPage() {
         {!sim && <p className="empty-hint">先创建作答，再拉取相似片段对照。</p>}
         {sim && (
           <>
-            <Notice tone="info">{sim.note}（结论字段恒为空：不自动判定违规）</Notice>
-            {sim.evidence.map((it, i) => (
+            <Notice tone="info">
+              {sim.status === "queued" ? "原创性证据正在异步生成。" : `${sim.note || "未发现可展示的相似片段"}（结论字段恒为空：不自动判定违规）`}
+            </Notice>
+            {(sim.evidence || []).map((it, i) => (
               <div key={i} className="sim-card">
                 <div className="row spread">
                   <span className="muted">来源：{it.source}</span>

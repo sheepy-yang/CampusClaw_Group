@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/httpapi"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/store"
 )
 
@@ -54,10 +55,16 @@ func AnonymizeForModel(_ context.Context, texts []string) []string {
 
 // AuditEvent 页面 / 接口 / 异步任务 / 工具调用审计。
 type AuditEvent struct {
-	ActorID string
-	ClassID string
-	Action  string
-	Detail  map[string]any
+	ActorID    string
+	ClassID    string
+	Action     string
+	Object     string
+	Result     string
+	Skill      string
+	Usage      int
+	DurationMS int64
+	RequestID  string
+	Detail     map[string]any
 }
 
 // AuditLogger 审计写入接口。
@@ -73,16 +80,46 @@ type MemoryAuditLogger struct {
 
 func NewAuditLogger() *MemoryAuditLogger { return &MemoryAuditLogger{} }
 
-func (a *MemoryAuditLogger) Log(_ context.Context, ev AuditEvent) error {
+func (a *MemoryAuditLogger) Log(ctx context.Context, ev AuditEvent) error {
 	a.mu.Lock()
 	a.seq++
 	id := time.Now().Format("20060102150405") + "-" + itoa(a.seq)
 	a.mu.Unlock()
-	store.Default.AppendAudit(store.AuditEvent{
+	if ev.Result == "" {
+		ev.Result = "succeeded"
+	}
+	if ev.Object == "" {
+		for _, key := range []string{"contentId", "submissionId", "attemptId", "taskId", "sessionId"} {
+			if value, ok := ev.Detail[key]; ok {
+				ev.Object = strings.TrimSpace(toString(value))
+				break
+			}
+		}
+	}
+	if ev.Object == "" {
+		ev.Object = "teaching"
+	}
+	if ev.RequestID == "" {
+		ev.RequestID = httpapi.RequestID(ctx)
+		if ev.RequestID == "" {
+			ev.RequestID = "internal"
+		}
+	}
+	return store.Default.AppendAudit(store.AuditEvent{
 		ID: id, ActorID: ev.ActorID, ClassID: ev.ClassID,
-		Action: ev.Action, Detail: ev.Detail, CreatedAt: time.Now(),
+		Action: ev.Action, Object: ev.Object, Result: ev.Result, Skill: ev.Skill,
+		Usage: ev.Usage, DurationMS: ev.DurationMS, RequestID: ev.RequestID,
+		Detail: ev.Detail, CreatedAt: time.Now().UTC(),
 	})
-	return nil
+}
+
+func toString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	default:
+		return ""
+	}
 }
 
 func itoa(n int) string {
@@ -98,6 +135,3 @@ func itoa(n int) string {
 	}
 	return string(b[i:])
 }
-
-// StubAuditLogger 兼容旧名称。
-type StubAuditLogger = MemoryAuditLogger

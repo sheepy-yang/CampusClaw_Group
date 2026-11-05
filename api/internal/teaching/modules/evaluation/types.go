@@ -5,30 +5,31 @@ import "time"
 // 杨瑾文模块：作业评价与班级分析 —— 状态与结构约定。
 
 const (
-	SubQueued              = "queued"
-	SubOCRProcessing       = "ocr_processing"
-	SubAwaitConfirm        = "awaiting_transcription_confirm"
-	SubGrading             = "grading"
-	SubNeedsTeacherReview  = "needs_teacher_review"
-	SubGradedSuggested     = "graded_suggested"
-	SubTeacherFinal        = "teacher_final"
-	SubFailedKept          = "failed_submission_kept" // 模型失败不丢提交
-	SubDrafting            = "drafting"
+	SubQueued             = "queued"
+	SubOCRProcessing      = "ocr_processing"
+	SubAwaitConfirm       = "awaiting_transcription_confirm"
+	SubGrading            = "grading"
+	SubNeedsTeacherReview = "needs_teacher_review"
+	SubGradedSuggested    = "graded_suggested"
+	SubTeacherFinal       = "teacher_final"
+	SubFailedKept         = "failed_submission_kept" // 模型失败不丢提交
+	SubDrafting           = "drafting"
 
 	TriggerInterval = "interval"
 	TriggerManual   = "manual"
 
-	MinClassReviewSamples = 5
-	MinDiagnosisSamples   = 3
+	MinClassReviewSamples  = 5
+	MinDiagnosisSamples    = 3
 	LowConfidenceThreshold = 0.8
 )
 
 // GradeStep 主观题步骤划分结果。
 type GradeStep struct {
-	Index   int    `json:"index"`
-	Text    string `json:"text"`
-	OK      bool   `json:"ok"`
-	Comment string `json:"comment,omitempty"`
+	Index    int    `json:"index"`
+	Text     string `json:"text"`
+	OK       bool   `json:"ok"`
+	Verified bool   `json:"verified"`
+	Comment  string `json:"comment,omitempty"`
 }
 
 // ScoreChange 教师改分审计。

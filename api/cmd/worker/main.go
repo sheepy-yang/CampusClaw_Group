@@ -37,10 +37,10 @@ func run(logger *slog.Logger) error {
 	defer stop()
 
 	logger.Info(
-		"worker skeleton ready",
+		"worker ready",
 		"event", "service_started",
 		"environment", cfg.Environment,
-		"mode", "lifecycle_only",
+		"mode", "redis_stream_consumer",
 	)
 	worker := queue.NewWorker()
 	return worker.Run(ctx)

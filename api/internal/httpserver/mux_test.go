@@ -100,23 +100,23 @@ func TestRequestIDPropagationAndSanitization(t *testing.T) {
 	}
 }
 
-func TestDeclaredBusinessRouteReturnsStructuredNotImplemented(t *testing.T) {
+func TestRemovedPlaceholderIsNotExposedWithoutContentDependency(t *testing.T) {
 	var logs bytes.Buffer
 	handler := newTestHandler(&logs)
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/skills/proposition", nil)
-	request.Header.Set("X-Request-ID", "business-placeholder")
+	request.Header.Set("X-Request-ID", "content-not-mounted")
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
 
-	if response.Code != http.StatusNotImplemented {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotImplemented)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
 	}
 	var apiErr httpapi.ErrorResponse
 	if err := json.NewDecoder(response.Body).Decode(&apiErr); err != nil {
 		t.Fatalf("decode error response: %v", err)
 	}
-	if apiErr.Code != "NOT_IMPLEMENTED" || apiErr.RequestID != "business-placeholder" {
+	if apiErr.Code != "NOT_FOUND" || apiErr.RequestID != "content-not-mounted" {
 		t.Fatalf("unexpected error response: %#v", apiErr)
 	}
 }

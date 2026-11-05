@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/content"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/health"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/httpapi"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/metrics"
+	"github.com/sheepy-yang/CampusClaw_Group/api/internal/objectstore"
 	"github.com/sheepy-yang/CampusClaw_Group/api/internal/teaching"
 )
 
@@ -16,6 +19,9 @@ type Dependencies struct {
 	HealthTimeout    time.Duration
 	HealthChecks     []health.Checker
 	TeachingPipeline teaching.Pipeline
+	ContentHandler   *content.Handler
+	Tutoring         *TutoringDependencies
+	ObjectStore      objectstore.Store
 }
 
 // NewMux registers the operational skeleton and declared business routes.
@@ -36,12 +42,26 @@ func NewMux(deps Dependencies) http.Handler {
 		}
 		httpapi.WriteJSON(w, status, report)
 	})
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		metrics.WritePrometheus(w)
+	})
 
 	// 平台服务
 	registerPlatformRoutes(mux)
 
-	// 十二项教学技能：刘恺骐/刘沛鑫模块为 501 骨架；杨瑾文评价模块挂载实装路由
-	registerTeachingRoutes(mux, deps.TeachingPipeline)
+	// 十二项教学技能与统一内容生命周期。
+	registerTeachingRoutes(mux, deps.TeachingPipeline, deps.ContentHandler)
+	if deps.ContentHandler != nil {
+		deps.ContentHandler.RegisterSkillRoutes(mux)
+		deps.ContentHandler.RegisterDedicatedRoutes(mux)
+	}
+	if deps.Tutoring != nil {
+		RegisterTutoringRoutes(mux, *deps.Tutoring)
+	}
+	if deps.ObjectStore != nil {
+		registerAttachmentRoutes(mux, deps.ObjectStore)
+	}
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")

@@ -2,6 +2,8 @@
 
 对应 change：`2026-10-28-bootstrap-project-skeleton`
 
+> 归档说明：本页保留第 7 课骨架阶段的执行记录，其中 501 占位响应是当时的验收项。后续 Change 已将占位路由替换为真实业务实现；当前版本请以 `make verify`、`make check-security` 和 [`end-to-end-verification.md`](../end-to-end-verification.md) 为准，不应再期待 501。
+
 本记录只接受命令、HTTP 响应、日志和另一名成员的实际运行结果；没有执行的项目保持未勾选，不以说明文字代替证据。
 
 ## 一、自动检查

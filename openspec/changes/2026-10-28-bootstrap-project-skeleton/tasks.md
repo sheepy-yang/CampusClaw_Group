@@ -30,7 +30,7 @@
 ## 4. 框架接口
 
 - [x] 4.1 增加 Retrieval、引用冻结和 SSE 事件类型
-  Verify: `go test ./internal/retrieval/... ./internal/agent/... ./internal/gateway/...` 编译接口契约
+  Verify: `go test ./internal/platform/... ./internal/agent/... ./internal/gateway/...` 覆盖已替换骨架端口的生产检索、引用与模型适配器
 - [x] 4.2 建立 Handler 到 Pipeline/Service 的依赖装配边界
   Verify: Transport 包不被 Domain/Port 包反向导入
 - [x] 4.3 使 MCP 信封与工具描述符合 JSON-RPC 2.0 骨架
