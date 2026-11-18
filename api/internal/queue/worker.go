@@ -434,7 +434,11 @@ func handleClassReview(ctx context.Context, job Job) error {
 	if raw, ok := job.Payload["anonymousInputs"].([]string); ok {
 		anon = raw
 	}
-	return evaluation.ProcessClassReviewWithModel(ctx, contentID, anon, gateway.NewClient())
+	err := evaluation.ProcessClassReviewWithModel(ctx, contentID, anon, gateway.NewClient())
+	if err != nil {
+		evaluation.MarkClassReviewFailed(contentID, err.Error())
+	}
+	return err
 }
 
 func handleDiagnosis(_ context.Context, job Job) error {

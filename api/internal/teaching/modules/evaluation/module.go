@@ -121,6 +121,10 @@ func (s *Services) EnqueueGradeWithKey(ctx context.Context, classID, studentID, 
 	task, _ := store.Default.GetTask(taskID)
 	task.Steps[len(task.Steps)-1].Status = "done"
 	store.Default.SaveTask(task)
+	// Worker 可能已同步推进状态（嵌入式队列）；回读最新提交再返回。
+	if latest, ok := store.Default.GetSubmission(subID); ok {
+		sub = latest
+	}
 	return gradeEnqueueResponse(sub, taskID), nil
 }
 
@@ -368,14 +372,67 @@ func (s *Services) confirmTranscription(ctx context.Context, submissionID, text,
 	if transcriptionConfidence < sub.Confidence {
 		sub.Confidence = transcriptionConfidence
 	}
-	sub.NeedsReview = true
+	// 转写置信度走阈值；评分依据不足（错因/低匹配）也强制复核。
+	// 注意：规则建议分置信度上限 0.75，不能单独用它与 0.8 阈值比较，否则永远复核。
+	scoreRatio := 0.0
+	if sub.MaxScore > 0 {
+		scoreRatio = suggested / sub.MaxScore
+	}
+	evidenceWeak := strings.TrimSpace(cause) != "" || scoreRatio < 0.5
+	sub.NeedsReview = NeedsTeacherReview(transcriptionConfidence, false, evidenceWeak)
 	sub.Confirmed = true
-	sub.Status = SubNeedsTeacherReview
+	if sub.NeedsReview {
+		sub.Status = SubNeedsTeacherReview
+	} else {
+		sub.Status = SubGradedSuggested
+	}
 	store.Default.SaveSubmission(sub)
 	if err := store.Default.EnsureSubmissionDurable(sub.ID); err != nil {
 		return nil, fmt.Errorf("%w: persist confirmed grading: %v", ErrDependencyUnavailable, err)
 	}
+	// 写入学习事件，供诊断样本与讲评错因链路使用（失败不阻断已确认评分）。
+	_ = appendConfirmedLearningEvent(sub, assignment)
 	return transcriptionResponse(sub), nil
+}
+
+func appendConfirmedLearningEvent(sub store.Submission, assignment store.Assignment) error {
+	kp := strings.TrimSpace(assignment.Title)
+	if len(assignment.Items) > 0 {
+		if itemKP := strings.TrimSpace(assignment.Items[0].KnowledgePoint); itemKP != "" {
+			kp = itemKP
+		}
+	}
+	if kp == "" {
+		kp = "主观题"
+	}
+	summary := strings.TrimSpace(sub.Transcription)
+	if summary == "" {
+		summary = strings.TrimSpace(sub.AnswerText)
+	}
+	if runes := []rune(summary); len(runes) > 120 {
+		summary = string(runes[:120]) + "…"
+	}
+	if summary == "" {
+		summary = "主观题已确认转写"
+	}
+	if cause := strings.TrimSpace(sub.ErrorCause); cause != "" {
+		summary = summary + "；错因：" + cause
+	}
+	outcome := store.LearningOutcomeUnknown
+	if sub.Suggested != nil && sub.MaxScore > 0 {
+		ratio := *sub.Suggested / sub.MaxScore
+		switch {
+		case ratio >= 0.85:
+			outcome = store.LearningOutcomeCorrect
+		case ratio <= 0.4:
+			outcome = store.LearningOutcomeIncorrect
+		}
+	}
+	eventID := "event-" + store.Digest(sub.ID+"|multimodal-confirm")
+	return store.Default.AppendEvent(store.LearningEvent{
+		ID: eventID, StudentID: sub.StudentID, ClassID: sub.ClassID, Kind: "assignment",
+		Summary: summary, KP: kp, Outcome: outcome, At: time.Now().UTC(),
+	})
 }
 
 func transcriptionResponse(sub store.Submission) map[string]any {

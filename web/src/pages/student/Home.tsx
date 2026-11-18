@@ -242,14 +242,16 @@ function MultimodalAssignment() {
 function Attempt() {
   const [attemptId, setAttemptId] = useState("");
   const [content, setContent] = useState("");
+  const [cites, setCites] = useState("讲义§2, 讲义§3");
+  const [aiNote, setAiNote] = useState("未使用生成式 AI 解题");
   return (
     <div className="grid">
       <SkillPanel
         title="作答与版本回看"
-        description="定时/主动保存快照；可补充引用与 AI 使用说明。"
-        actionLabel="保存版本"
+        description="只接受 manual / interval 快照；逐键采集会被服务端拒绝。把 attemptId 发给教师做原创性复核。"
+        actionLabel="主动保存版本"
         onRun={async () => {
-          const res = await api<{ attemptId: string }>("/api/v1/skills/answer-replay/snapshot", {
+          const res = await api<{ attemptId: string; version: number }>("/api/v1/skills/answer-replay/snapshot", {
             method: "POST",
             body: JSON.stringify({ attemptId: attemptId || undefined, content, trigger: "manual" }),
           });
@@ -260,12 +262,60 @@ function Attempt() {
         <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={4} placeholder="输入作答内容…" />
       </SkillPanel>
       {attemptId && (
-        <SkillPanel
-          title="回放时间线"
-          description={`attempt: ${attemptId}`}
-          actionLabel="查看"
-          onRun={() => api(`/api/v1/skills/answer-replay/${attemptId}/timeline`)}
-        />
+        <>
+          <SkillPanel
+            title="模拟定时快照"
+            description={`attempt: ${attemptId}`}
+            actionLabel="保存 interval 版本"
+            onRun={() =>
+              api("/api/v1/skills/answer-replay/snapshot", {
+                method: "POST",
+                body: JSON.stringify({ attemptId, content, trigger: "interval" }),
+              })
+            }
+          />
+          <SkillPanel
+            title="补充引用与 AI 使用说明"
+            description="提交前声明资料来源与工具使用情况。"
+            actionLabel="保存声明"
+            onRun={() =>
+              api("/api/v1/skills/answer-replay/meta", {
+                method: "POST",
+                body: JSON.stringify({
+                  attemptId,
+                  citations: cites.split(",").map((s) => s.trim()).filter(Boolean),
+                  aiUsageNote: aiNote,
+                }),
+              })
+            }
+          >
+            <input value={cites} onChange={(e) => setCites(e.target.value)} placeholder="引用，逗号分隔" />
+            <input value={aiNote} onChange={(e) => setAiNote(e.target.value)} placeholder="AI 使用说明" />
+          </SkillPanel>
+          <SkillPanel
+            title="回放时间线"
+            description={`attempt: ${attemptId}`}
+            actionLabel="查看"
+            onRun={() => api(`/api/v1/skills/answer-replay/${attemptId}/timeline`)}
+          />
+          <SkillPanel
+            title="尝试逐键采集（应失败）"
+            description="验证隐私策略：keydown 触发必须被拒绝。"
+            actionLabel="发送 keydown"
+            onRun={async () => {
+              try {
+                await api("/api/v1/skills/answer-replay/snapshot", {
+                  method: "POST",
+                  body: JSON.stringify({ attemptId, content, trigger: "keydown" }),
+                });
+                throw new Error("服务端不应接受 keydown 快照");
+              } catch (error) {
+                if (error instanceof Error && error.message.includes("不应接受")) throw error;
+                return { rejected: true, message: error instanceof Error ? error.message : String(error) };
+              }
+            }}
+          />
+        </>
       )}
     </div>
   );

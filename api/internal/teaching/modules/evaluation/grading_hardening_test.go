@@ -113,6 +113,48 @@ func TestMultimodalGradeTransitionsAndConfirmationOwnership(t *testing.T) {
 	}
 }
 
+func TestHighConfidenceTranscriptionCanReachGradedSuggested(t *testing.T) {
+	useFreshEvaluationStore(t)
+	ctx := context.Background()
+	svc := fixedService(&memSink{})
+	rubric := "写出增广矩阵并做初等行变换，比较系数矩阵与增广矩阵秩。秩相等则有解。"
+	store.Default.SaveAssignment(store.Assignment{
+		ID: "assignment-strong", ClassID: "class-a", Title: "主观题", Status: "published", MaxScore: 10,
+		Items: []store.Question{{ID: "q1", Type: "subjective", Stem: "说明", Answer: rubric, Status: "published"}},
+	})
+	answer := rubric + "\n" + rubric
+	queued, err := svc.EnqueueGrade(ctx, "class-a", "student-a", "assignment-strong", answer, "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := queued["submissionId"].(string)
+	if err := ProcessMultimodalGrade(id, false); err != nil {
+		t.Fatal(err)
+	}
+	owner := ActorScope{UserID: "student-a", ClassID: "class-a"}
+	result, err := svc.ConfirmTranscriptionForActor(ctx, id, "", owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graded := result["submission"].(store.Submission)
+	if graded.Status != SubGradedSuggested || graded.NeedsReview {
+		t.Fatalf("high-confidence strong match should be graded_suggested: %#v", graded)
+	}
+	events := store.Default.EventsFor("student-a", "class-a")
+	found := false
+	for _, event := range events {
+		if strings.Contains(event.ID, "multimodal-confirm") || strings.HasPrefix(event.ID, "event-") {
+			if event.Kind == "assignment" && event.StudentID == "student-a" {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected learning event after confirm, got %#v", events)
+	}
+}
+
 func TestImageGradeFailsExplicitlyAndLowConfidenceRequiresReview(t *testing.T) {
 	useFreshEvaluationStore(t)
 	ctx := context.Background()

@@ -404,16 +404,27 @@ func (m *Memory) seed() {
 	}
 	m.ClassSkills["class-other"] = otherSkills
 
+	// 杨瑾文：已发布主观题作业（含评分规则，供批改确认使用）
+	m.Assignments["asg-subjective-1"] = Assignment{
+		ID: "asg-subjective-1", ClassID: classID, Title: "高斯消元主观题", Status: "published",
+		MaxScore: 10, CreatedBy: "tea-1", CreatedAt: now,
+		Items: []Question{{
+			ID: "q-sub-1", Type: "subjective", Stem: "用高斯消元说明有解条件，并写出主要步骤。",
+			Answer: "写出增广矩阵；做初等行变换求阶梯型；比较系数矩阵与增广矩阵的秩；秩相等则有解。",
+			Explanation: "事实依据来自讲义：秩等于增广矩阵秩时有解。", Status: "published",
+		}},
+	}
+
 	// 演示错题与学习事件（杨瑾文：诊断证据）
 	m.Mistakes = []Mistake{
 		{ID: "mistake-1", StudentID: "stu-1", ClassID: classID, KnowledgePoint: "高斯消元", QuestionStem: "将矩阵化简为阶梯型", ErrorCause: "行交换后未同步右端", Hint: "检查一次初等行变换是否作用于增广矩阵整行。", CreatedAt: now.Add(-48 * time.Hour)},
 		{ID: "mistake-2", StudentID: "stu-1", ClassID: classID, KnowledgePoint: "矩阵秩", QuestionStem: "判断方程组有解条件", ErrorCause: "混淆系数矩阵与增广矩阵秩", Hint: "分别计算两个矩阵的秩并比较。", CreatedAt: now.Add(-24 * time.Hour)},
 	}
 	m.Events = []LearningEvent{
-		{ID: "ev-1", StudentID: "stu-1", ClassID: classID, Kind: "assignment", Summary: "作业#1 行交换后未同步右端", KP: "高斯消元", At: now.Add(-72 * time.Hour)},
-		{ID: "ev-2", StudentID: "stu-1", ClassID: classID, Kind: "practice", Summary: "练习#2 混淆两种秩", KP: "矩阵秩", At: now.Add(-48 * time.Hour)},
-		{ID: "ev-3", StudentID: "stu-1", ClassID: classID, Kind: "tutoring", Summary: "辅导追问：增广矩阵概念", KP: "高斯消元", At: now.Add(-24 * time.Hour)},
-		{ID: "ev-4", StudentID: "stu-1", ClassID: classID, Kind: "help", Summary: "课堂求助：回代计算", KP: "高斯消元", At: now.Add(-12 * time.Hour)},
+		{ID: "ev-1", StudentID: "stu-1", ClassID: classID, Kind: "assignment", Summary: "作业#1 行交换后未同步右端", KP: "高斯消元", Outcome: LearningOutcomeIncorrect, At: now.Add(-72 * time.Hour)},
+		{ID: "ev-2", StudentID: "stu-1", ClassID: classID, Kind: "practice", Summary: "练习#2 混淆两种秩", KP: "矩阵秩", Outcome: LearningOutcomeIncorrect, At: now.Add(-48 * time.Hour)},
+		{ID: "ev-3", StudentID: "stu-1", ClassID: classID, Kind: "tutoring", Summary: "辅导追问：增广矩阵概念", KP: "高斯消元", Outcome: LearningOutcomeUnderstood, At: now.Add(-24 * time.Hour)},
+		{ID: "ev-4", StudentID: "stu-1", ClassID: classID, Kind: "help", Summary: "课堂求助：回代计算", KP: "高斯消元", Outcome: LearningOutcomeCompleted, At: now.Add(-12 * time.Hour)},
 	}
 }
 

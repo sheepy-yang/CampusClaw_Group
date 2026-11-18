@@ -203,18 +203,9 @@ func handleOverrideScore(w http.ResponseWriter, r *http.Request, p auth.Principa
 }
 
 func handleGetSubmission(w http.ResponseWriter, r *http.Request, p auth.Principal) {
-	id := r.PathValue("submissionID")
-	sub, err := deps.Eval.GetSubmission(r.Context(), id)
+	sub, err := deps.Eval.GetSubmissionForActor(r.Context(), r.PathValue("submissionID"), evaluationActor(p))
 	if err != nil {
-		writeErr(w, r, http.StatusNotFound, "NOT_FOUND", "not found")
-		return
-	}
-	if p.Role == auth.RoleStudent && sub.StudentID != p.UserID {
-		writeErr(w, r, http.StatusNotFound, "NOT_FOUND", "not found")
-		return
-	}
-	if p.ClassID != "" && sub.ClassID != "" && sub.ClassID != p.ClassID {
-		writeErr(w, r, http.StatusNotFound, "NOT_FOUND", "not found")
+		writeEvaluationError(w, r, err)
 		return
 	}
 	writeJSON(w, r, http.StatusOK, sub)
@@ -233,8 +224,12 @@ func handleRetryMultimodalGrade(w http.ResponseWriter, r *http.Request, p auth.P
 }
 
 func handleListSubmissions(w http.ResponseWriter, r *http.Request, p auth.Principal) {
-	asg := r.URL.Query().Get("assignmentId")
-	writeJSON(w, r, http.StatusOK, deps.Eval.ListSubmissions(r.Context(), p.ClassID, asg))
+	list, err := deps.Eval.ListSubmissionsForActor(r.Context(), evaluationActor(p), r.URL.Query().Get("assignmentId"))
+	if err != nil {
+		writeEvaluationError(w, r, err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, list)
 }
 
 func handleClassReview(w http.ResponseWriter, r *http.Request, p auth.Principal) {

@@ -91,7 +91,7 @@ func keepFailedSubmission(sub store.Submission, cause error) error {
 // 替换模型边界数据。
 func ProcessClassReview(contentID string, anonymousInputs []string) error {
 	return ProcessClassReviewWithModel(
-		context.Background(), contentID, anonymousInputs, &gateway.OfflineClient{Model: "offline-demo"},
+		context.Background(), contentID, anonymousInputs, gateway.NewClient(),
 	)
 }
 
@@ -151,13 +151,17 @@ func generateClassReview(ctx context.Context, inputs []string, model gateway.Cli
 		return nil, fmt.Errorf("%w: class review model", ErrDependencyUnavailable)
 	}
 	evidence, _ := json.Marshal(inputs)
+	userPrompt := "匿名错因列表（JSON 数组）。commonCauses 必须逐字选自该列表，不得改写。\n" +
+		"合法示例：{\"outline\":[\"围绕高频错因讲解\"],\"examples\":[\"对比例题\"],\"remedial\":[\"补救练习\"],\"commonCauses\":" +
+		string(evidence) + "}\n证据：" + string(evidence)
 	response, err := model.Chat(ctx, gateway.ChatRequest{Messages: []gateway.ChatMessage{
 		{
 			Role: "system",
 			Content: "你是班级讲评智能体。输入已匿名。只能归纳输入中出现的错因，不得推断个人信息。" +
-				`仅输出 JSON：{"outline":["..."],"examples":["..."],"remedial":["..."],"commonCauses":["必须逐字复制输入中的错因"]}。`,
+				`仅输出 JSON 对象：{"outline":["字符串"],"examples":["字符串"],"remedial":["字符串"],"commonCauses":["必须逐字复制输入中的错因"]}。` +
+				"四个字段都必须是非空字符串数组（1-20 项），不要输出对象数组或其他类型。",
 		},
-		{Role: "user", Content: string(evidence)},
+		{Role: "user", Content: userPrompt},
 	}})
 	if err != nil {
 		return nil, fmt.Errorf("%w: class review model: %v", ErrDependencyUnavailable, err)
@@ -168,16 +172,122 @@ func generateClassReview(ctx context.Context, inputs []string, model gateway.Cli
 		review["generationMode"] = "offline_demo"
 		return review, nil
 	}
-	review := response.RawJSON
+	review := normalizeClassReviewJSON(response.RawJSON, inputs)
+	if review == nil && strings.TrimSpace(response.Text) != "" {
+		var parsed map[string]any
+		if json.Unmarshal([]byte(stripJSONFence(response.Text)), &parsed) == nil {
+			review = normalizeClassReviewJSON(parsed, inputs)
+		}
+	}
 	if err := validateClassReviewOutput(ctx, review, inputs); err != nil {
-		return nil, fmt.Errorf("%w: class review output: %v", ErrUntrustedEvidence, err)
+		// 模型偶发不合规：降级为证据频次统计讲评，保证教师侧可完成流程。
+		fallback := buildClassReview(inputs)
+		fallback["model"] = response.Model
+		fallback["generationMode"] = "evidence_fallback"
+		fallback["fallbackReason"] = err.Error()
+		return fallback, nil
 	}
 	review["anonymous"] = true
 	review["inputCount"] = len(inputs)
 	review["anonymousInputs"] = append([]string(nil), inputs...)
 	review["teacherOnly"] = true
 	review["model"] = response.Model
+	review["generationMode"] = "model"
 	return review, nil
+}
+
+func normalizeClassReviewJSON(raw map[string]any, inputs []string) map[string]any {
+	if raw == nil {
+		return nil
+	}
+	out := make(map[string]any, len(raw)+4)
+	for k, v := range raw {
+		out[k] = v
+	}
+	for _, key := range []string{"outline", "examples", "remedial", "commonCauses"} {
+		if values, ok := coerceStringList(out[key]); ok {
+			out[key] = values
+		}
+	}
+	if causes, ok := toStringSlice(out["commonCauses"]); ok {
+		allowed := make(map[string]bool, len(inputs))
+		for _, input := range inputs {
+			allowed[input] = true
+		}
+		filtered := make([]string, 0, len(causes))
+		seen := map[string]bool{}
+		for _, cause := range causes {
+			cause = strings.TrimSpace(cause)
+			if cause == "" || !allowed[cause] || seen[cause] {
+				continue
+			}
+			seen[cause] = true
+			filtered = append(filtered, cause)
+		}
+		if len(filtered) == 0 {
+			// 模型改写了错因文案：回退为输入证据本身（去重保序）。
+			for _, input := range inputs {
+				if seen[input] {
+					continue
+				}
+				seen[input] = true
+				filtered = append(filtered, input)
+			}
+		}
+		out["commonCauses"] = filtered
+	}
+	return out
+}
+
+func coerceStringList(value any) ([]string, bool) {
+	if values, ok := toStringSlice(value); ok {
+		return values, true
+	}
+	switch items := value.(type) {
+	case []any:
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			switch typed := item.(type) {
+			case string:
+				if text := strings.TrimSpace(typed); text != "" {
+					out = append(out, text)
+				}
+			case map[string]any:
+				for _, key := range []string{"text", "title", "cause", "content", "summary"} {
+					if text, ok := typed[key].(string); ok {
+						if text = strings.TrimSpace(text); text != "" {
+							out = append(out, text)
+							break
+						}
+					}
+				}
+			default:
+				text := strings.TrimSpace(fmt.Sprint(item))
+				if text != "" && text != "<nil>" {
+					out = append(out, text)
+				}
+			}
+		}
+		if len(out) == 0 {
+			return nil, false
+		}
+		return out, true
+	default:
+		return nil, false
+	}
+}
+
+func stripJSONFence(text string) string {
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "```") {
+		text = strings.TrimPrefix(text, "```json")
+		text = strings.TrimPrefix(text, "```JSON")
+		text = strings.TrimPrefix(text, "```")
+		if i := strings.LastIndex(text, "```"); i >= 0 {
+			text = text[:i]
+		}
+	}
+	return strings.TrimSpace(text)
 }
 
 func validateClassReviewOutput(ctx context.Context, review map[string]any, inputs []string) error {
@@ -209,6 +319,31 @@ func validateClassReviewOutput(ctx context.Context, review map[string]any, input
 		}
 	}
 	return nil
+}
+
+// MarkClassReviewFailed 将生成失败写回 content，避免永久卡在 generating。
+func MarkClassReviewFailed(contentID, reason string) {
+	c, ok := store.Default.GetContent(contentID)
+	if !ok || c.Payload == nil {
+		return
+	}
+	if c.Skill != string(domain.SkillClassReview) {
+		return
+	}
+	if c.Status != string(domain.StatusGenerating) {
+		return
+	}
+	c.Payload["generationError"] = truncateRunes(reason, 240)
+	c.UpdatedAt = time.Now().UTC()
+	store.Default.SaveContent(c)
+}
+
+func truncateRunes(s string, max int) string {
+	rs := []rune(strings.TrimSpace(s))
+	if max <= 0 || len(rs) <= max {
+		return string(rs)
+	}
+	return string(rs[:max]) + "…"
 }
 
 func buildClassReview(inputs []string) map[string]any {

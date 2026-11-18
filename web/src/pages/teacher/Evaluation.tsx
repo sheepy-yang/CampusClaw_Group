@@ -352,6 +352,9 @@ type ReviewData = {
   inputCount?: number;
   anonymousInputs?: string[];
   teacherOnly?: boolean;
+  model?: string;
+  generationMode?: string;
+  fallbackReason?: string;
 };
 
 const CONTENT_STATUS: Record<string, { label: string; tone: string }> = {
@@ -397,10 +400,13 @@ export function ReviewPage() {
       if (res.skipped) return;
       const done = await pollUntil<Content>(
         () => api<Content>(`/api/v1/contents/${res.contentId}`),
-        (c) => Boolean(c.payload?.review),
+        (c) => Boolean(c.payload?.review) || Boolean(c.payload?.generationError),
         { attempts: 20 }
       );
       setContent(done ?? null);
+      if (done?.payload?.generationError && !done.payload?.review) {
+        setErr(`讲评生成失败：${String(done.payload.generationError)}`);
+      }
     } catch (e) {
       setErr(errMsg(e));
     } finally {
@@ -473,10 +479,26 @@ export function ReviewPage() {
             </div>
           )}
 
-          {!review && <p className="empty-hint">讲评生成中… Worker 处理完成后自动渲染。</p>}
+          {!review && !(content.payload as any)?.generationError && (
+            <p className="empty-hint">讲评生成中… Worker 处理完成后自动渲染。</p>
+          )}
+          {!review && (content.payload as any)?.generationError && (
+            <Notice tone="err">
+              讲评生成失败：{String((content.payload as any).generationError)}。可重新点击「基于真实提交生成讲评」重试。
+            </Notice>
+          )}
 
           {review && (
             <>
+              <div className="row wrap">
+                {review.generationMode && (
+                  <span className={`badge ${review.generationMode === "model" ? "done" : "warn"}`}>
+                    生成方式 {String(review.generationMode)}
+                  </span>
+                )}
+                {review.model && <span className="badge info">模型 {String(review.model)}</span>}
+                {review.fallbackReason && <span className="badge warn">已证据降级</span>}
+              </div>
               <div className="grid two">
                 <div className="card-list">
                   <h4>讲评大纲</h4>
@@ -543,6 +565,11 @@ type Diagnosis = {
 
 const EVENT_KIND: Record<string, string> = { assignment: "作业", practice: "练习", help: "求助", tutoring: "辅导" };
 const LEVEL_META: Record<string, { label: string; tone: string; pct: number }> = {
+  needs_support: { label: "需支持", tone: "err", pct: 30 },
+  mixed: { label: "混合", tone: "warn", pct: 55 },
+  demonstrated: { label: "已掌握", tone: "good", pct: 90 },
+  insufficient_outcome_data: { label: "证据不足", tone: "info", pct: 40 },
+  // 兼容旧对照/模型字段
   weak: { label: "薄弱", tone: "err", pct: 30 },
   developing: { label: "发展中", tone: "warn", pct: 60 },
   strong: { label: "已掌握", tone: "good", pct: 90 },
@@ -714,49 +741,21 @@ type SimReport = {
 
 export function ReplayPage() {
   const [attemptId, setAttemptId] = useState("");
-  const [content, setContent] = useState("秩等于增广矩阵秩时有解。高斯消元法通过初等行变换求阶梯型。");
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [sim, setSim] = useState<SimReport | null>(null);
   const [err, setErr] = useState("");
-  const [toast, setToast] = useState("");
-  const [cites, setCites] = useState("讲义§3, 讲义§2");
-  const [aiNote, setAiNote] = useState("使用过语法检查，未生成解题步骤");
   const [busy, setBusy] = useState(false);
 
-  async function snapshot(trigger: "manual" | "interval" | "keydown") {
+  async function loadTimeline() {
+    const id = attemptId.trim();
+    if (!id) return;
     setBusy(true);
     setErr("");
-    setToast("");
+    setSim(null);
     try {
-      const res = await api<{ attemptId: string; version: number; trigger: string; keylogging: boolean }>(
-        "/api/v1/skills/answer-replay/snapshot",
-        { method: "POST", body: JSON.stringify({ attemptId: attemptId || undefined, content, trigger }) }
-      );
-      setAttemptId(res.attemptId);
-      setToast(trigger === "keydown" ? "意外成功（不应发生）" : `已保存版本 v${res.version}（${trigger === "manual" ? "主动保存" : "定时快照"}）`);
-      setTimeline(await api<Timeline>(`/api/v1/skills/answer-replay/${res.attemptId}/timeline`));
+      setTimeline(await api<Timeline>(`/api/v1/skills/answer-replay/${id}/timeline`));
     } catch (e) {
-      if (trigger === "keydown") {
-        setErr(`已按策略拒绝逐键采集：${errMsg(e)}`);
-      } else {
-        setErr(errMsg(e));
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveMeta() {
-    setBusy(true);
-    setErr("");
-    try {
-      await api("/api/v1/skills/answer-replay/meta", {
-        method: "POST",
-        body: JSON.stringify({ attemptId, citations: cites.split(",").map((s) => s.trim()).filter(Boolean), aiUsageNote: aiNote }),
-      });
-      setToast("引用与 AI 使用说明已补充");
-      setTimeline(await api<Timeline>(`/api/v1/skills/answer-replay/${attemptId}/timeline`));
-    } catch (e) {
+      setTimeline(null);
       setErr(errMsg(e));
     } finally {
       setBusy(false);
@@ -764,18 +763,23 @@ export function ReplayPage() {
   }
 
   async function loadSim() {
+    const id = attemptId.trim();
+    if (!id) return;
     setBusy(true);
     setErr("");
     try {
-      let report = await api<SimReport>(`/api/v1/skills/answer-replay/${attemptId}/similarity`);
+      let report = await api<SimReport>(`/api/v1/skills/answer-replay/${id}/similarity`);
       setSim(report);
       for (let attempt = 0; report.status === "queued" && attempt < 40; attempt += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 250));
-        report = await api<SimReport>(`/api/v1/skills/answer-replay/${attemptId}/similarity`);
+        report = await api<SimReport>(`/api/v1/skills/answer-replay/${id}/similarity`);
         setSim(report);
       }
       if (report.status === "queued") {
         throw new Error("原创性证据仍在生成，请稍后重试");
+      }
+      if (report.verdict != null) {
+        throw new Error("服务端不应返回学术不端结论");
       }
     } catch (e) {
       setErr(errMsg(e));
@@ -789,41 +793,33 @@ export function ReplayPage() {
       <header className="page-head">
         <div>
           <h2>作答过程回放与原创性审查</h2>
-          <p className="muted">仅保存定时 / 主动快照，绝不记录键盘行为；相似片段并排呈现证据，由教师判断，AI 不自动生成违规结论。</p>
+          <p className="muted">
+            教师只复核学生已保存的版本时间线与相似证据。快照由学生在学习台创建；服务端拒绝逐键采集，且永不自动给出违规结论。
+          </p>
         </div>
-        <GuardChips items={["仅 interval / manual", "逐键采集被拒绝", "不自动判定违规"]} />
+        <GuardChips items={["教师只读复核", "逐键采集被拒绝", "verdict 恒为 null"]} />
       </header>
+
+      <section className="panel grid">
+        <h3>按 attempt 加载</h3>
+        <div className="row">
+          <input
+            style={{ flex: 1, minWidth: 220 }}
+            value={attemptId}
+            onChange={(e) => setAttemptId(e.target.value)}
+            placeholder="粘贴学生返回的 attemptId"
+          />
+          <button onClick={loadTimeline} disabled={busy || !attemptId.trim()}>查看时间线</button>
+          <button className="secondary" onClick={loadSim} disabled={busy || !attemptId.trim()}>拉取相似证据</button>
+        </div>
+        {err && <Notice tone="err">{err}</Notice>}
+        <Notice tone="info">学生端「作答与回看」负责 manual / interval 快照；教师端不能代替学生写入版本。</Notice>
+      </section>
 
       <div className="cols">
         <section className="panel grid">
-          <h3>作答编辑区</h3>
-          <textarea rows={6} value={content} onChange={(e) => setContent(e.target.value)} />
-          <div className="row">
-            <button onClick={() => snapshot("manual")} disabled={busy}>主动保存版本</button>
-            <button className="secondary" onClick={() => snapshot("interval")} disabled={busy}>模拟定时快照</button>
-            <button className="danger" onClick={() => snapshot("keydown")} disabled={busy}>尝试逐键采集（应被拒绝）</button>
-          </div>
-          {attemptId && <span className="pill mono">attempt: {attemptId}</span>}
-          {err && <Notice tone="err">{err}</Notice>}
-          {toast && <Notice tone="ok">{toast}</Notice>}
-
-          <div>
-            <h4>引用与 AI 使用说明</h4>
-            <label className="muted">引用（逗号分隔）
-              <input value={cites} onChange={(e) => setCites(e.target.value)} />
-            </label>
-            <label className="muted" style={{ marginTop: 8 }}>AI 工具使用说明
-              <input value={aiNote} onChange={(e) => setAiNote(e.target.value)} />
-            </label>
-            <div className="row" style={{ marginTop: 8 }}>
-              <button className="secondary" onClick={saveMeta} disabled={busy || !attemptId}>补充声明</button>
-            </div>
-          </div>
-        </section>
-
-        <section className="panel grid">
           <h3>版本时间线</h3>
-          {!timeline && <p className="empty-hint">保存一次快照后自动显示时间线。</p>}
+          {!timeline && <p className="empty-hint">输入 attemptId 后加载时间线。</p>}
           {timeline && (
             <>
               <ol className="timeline">
@@ -847,35 +843,35 @@ export function ReplayPage() {
             </>
           )}
         </section>
-      </div>
 
-      <section className="panel grid">
-        <div className="row spread">
+        <section className="panel grid">
           <h3>原创性审查证据</h3>
-          <button onClick={loadSim} disabled={busy || !attemptId}>拉取相似证据</button>
-        </div>
-        {!sim && <p className="empty-hint">先创建作答，再拉取相似片段对照。</p>}
-        {sim && (
-          <>
-            <Notice tone="info">
-              {sim.status === "queued" ? "原创性证据正在异步生成。" : `${sim.note || "未发现可展示的相似片段"}（结论字段恒为空：不自动判定违规）`}
-            </Notice>
-            {(sim.evidence || []).map((it, i) => (
-              <div key={i} className="sim-card">
-                <div className="row spread">
-                  <span className="muted">来源：{it.source}</span>
-                  <span className={`badge ${it.similarity >= 0.8 ? "err" : it.similarity >= 0.6 ? "warn" : "info"}`}>
-                    相似度 {Math.round(it.similarity * 100)}%
-                  </span>
+          {!sim && <p className="empty-hint">加载时间线后可拉取相似片段。</p>}
+          {sim && (
+            <>
+              <Notice tone="info">
+                {sim.status === "queued"
+                  ? "原创性证据正在异步生成。"
+                  : `${sim.note || "未发现可展示的相似片段"}（结论字段恒为空：不自动判定违规）`}
+              </Notice>
+              <p className="muted mono">verdict = {String(sim.verdict)}</p>
+              {(sim.evidence || []).map((it, i) => (
+                <div key={i} className="sim-card">
+                  <div className="row spread">
+                    <span className="muted">来源：{it.source}</span>
+                    <span className={`badge ${it.similarity >= 0.8 ? "err" : it.similarity >= 0.6 ? "warn" : "info"}`}>
+                      相似度 {Math.round(it.similarity * 100)}%
+                    </span>
+                  </div>
+                  <Bar value={it.similarity} max={1} tone={it.similarity >= 0.8 ? "err" : "warn"} />
+                  <div className="frag">{it.fragment}</div>
+                  <span className="muted">{it.location}</span>
                 </div>
-                <Bar value={it.similarity} max={1} tone={it.similarity >= 0.8 ? "err" : "warn"} />
-                <div className="frag">{it.fragment}</div>
-                <span className="muted">{it.location}</span>
-              </div>
-            ))}
-          </>
-        )}
-      </section>
+              ))}
+            </>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

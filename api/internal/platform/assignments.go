@@ -14,6 +14,13 @@ import (
 )
 
 func hideAssignmentAnswers(assignment *store.Assignment) {
+	if len(assignment.Items) == 0 {
+		return
+	}
+	// 深拷贝 Items，避免清空答案时改写 store 里共享的底层切片。
+	items := make([]store.Question, len(assignment.Items))
+	copy(items, assignment.Items)
+	assignment.Items = items
 	for i := range assignment.Items {
 		assignment.Items[i].Answer = ""
 		assignment.Items[i].Explanation = ""

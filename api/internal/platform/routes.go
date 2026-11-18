@@ -280,17 +280,18 @@ func handleListAssignments(w http.ResponseWriter, r *http.Request, p auth.Princi
 		writeErr(w, r, http.StatusNotFound, "NOT_FOUND", "not found")
 		return
 	}
-	out := store.Default.ListAssignments(classID)
+	listed := store.Default.ListAssignments(classID)
+	out := make([]store.Assignment, 0, len(listed))
 	if p.Role == auth.RoleStudent {
-		filtered := out[:0]
-		for _, assignment := range out {
+		for _, assignment := range listed {
 			if assignment.Status != "published" {
 				continue
 			}
 			hideAssignmentAnswers(&assignment)
-			filtered = append(filtered, assignment)
+			out = append(out, assignment)
 		}
-		out = filtered
+	} else {
+		out = append(out, listed...)
 	}
 	httpapi.WriteJSON(w, http.StatusOK, out)
 }
